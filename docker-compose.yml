@@ -1,0 +1,40 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3003:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - PORT=8086
+      - DB_HOST=host.docker.internal
+      - DB_PORT=3306
+      - DB_NAME=bujiaban
+      - DB_USER=bujiaban
+      - DB_PASSWORD=testpassword
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - REDIS_DB=1
+      - MAIN_API_URL=http://xrugc-main-api
+      - PLUGIN_NAME=user-management
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - xrugc-network
+    restart: unless-stopped
+
+networks:
+  xrugc-network:
+    external: true
+    name: driver_default
