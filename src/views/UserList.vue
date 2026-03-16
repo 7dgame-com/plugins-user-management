@@ -14,10 +14,6 @@
           <el-icon><Search /></el-icon>
         </template>
       </el-input>
-      <el-select v-model="statusFilter" :placeholder="t('common.status')" clearable style="width: 120px" @change="fetchUsers">
-        <el-option :label="t('user.status.active')" :value="10" />
-        <el-option :label="t('user.status.disabled')" :value="0" />
-      </el-select>
       <el-button v-if="can('create-user')" type="primary" @click="$router.push('/users/create')">
         <el-icon><Plus /></el-icon>
         {{ t('user.addUser') }}
@@ -26,11 +22,12 @@
 
     <!-- 用户表格 -->
     <div class="table-card">
-      <el-table :data="users" v-loading="loading" stripe>
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" :label="t('user.username')" min-width="140" />
-        <el-table-column prop="email" :label="t('user.email')" min-width="200" />
-        <el-table-column :label="t('user.role')" width="160">
+      <el-table :data="users" v-loading="loading" stripe @sort-change="handleSortChange">
+        <el-table-column prop="id" label="ID" width="80" sortable="custom" />
+        <el-table-column prop="username" :label="t('user.username')" min-width="140" sortable="custom" />
+        <el-table-column prop="nickname" :label="t('user.nickname')" min-width="140" sortable="custom" />
+        <el-table-column prop="email" :label="t('user.email')" min-width="200" sortable="custom" />
+        <el-table-column prop="roles" :label="t('user.role')" width="160" sortable="custom">
           <template #default="{ row }">
             <el-select
               v-if="can('change-role') && canChangeRole(row)"
@@ -48,14 +45,8 @@
             <span v-else>{{ getRoleLabel(row.roles) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 10 ? 'success' : 'danger'" size="small">
-              {{ row.status === 10 ? t('user.status.active') : t('user.status.disabled') }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('user.createdAt')" width="180">
+
+        <el-table-column prop="created_at" :label="t('user.createdAt')" width="180" sortable="custom">
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
@@ -110,6 +101,8 @@ const statusFilter = ref<number | undefined>()
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+const sortField = ref('')
+const sortOrder = ref('')
 const currentUserRoles = ref<string[]>([])
 
 function getRoleLevel(roles?: string[]): number {
@@ -158,6 +151,10 @@ async function fetchUsers() {
     const params: any = { page: page.value, pageSize: pageSize.value }
     if (search.value) params.search = search.value
     if (statusFilter.value !== undefined && statusFilter.value !== null) params.status = statusFilter.value
+    if (sortField.value) {
+      params.sort = sortField.value
+      params.order = sortOrder.value
+    }
     const { data } = await api.get('/users', { params })
     users.value = data.data
     total.value = data.pagination.total
@@ -186,6 +183,12 @@ async function handleDelete(id: number) {
   } catch (err: any) {
     ElMessage.error(err.response?.data?.error || err.response?.data?.message || t('user.messages.deleteFailed'))
   }
+}
+
+function handleSortChange({ prop, order }: { prop: string; order: string | null }) {
+  sortField.value = order ? prop : ''
+  sortOrder.value = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : ''
+  fetchUsers()
 }
 
 function formatTime(ts: number) {

@@ -30,6 +30,7 @@ export default {
     editUser: '编辑用户',
     createUser: '创建用户',
     username: '用户名',
+    nickname: '昵称',
     email: '邮箱',
     password: '密码',
     newPassword: '新密码',
@@ -41,10 +42,10 @@ export default {
     searchPlaceholder: '搜索用户名或邮箱',
     role: '角色',
     roles: {
-      root: '超级管理员',
-      admin: '管理员',
-      manager: '管理者',
-      user: '用户',
+      root: '根用户',
+      admin: '超级管理员',
+      manager: '管理员',
+      user: '普通用户',
     },
     status: {
       active: '活跃',

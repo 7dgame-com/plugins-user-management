@@ -30,6 +30,7 @@ export default {
     editUser: 'ユーザー編集',
     createUser: 'ユーザー作成',
     username: 'ユーザー名',
+    nickname: 'ニックネーム',
     email: 'メールアドレス',
     password: 'パスワード',
     newPassword: '新しいパスワード',
@@ -41,10 +42,10 @@ export default {
     searchPlaceholder: 'ユーザー名またはメールアドレスで検索',
     role: '役割',
     roles: {
-      root: 'スーパー管理者',
-      admin: '管理者',
-      manager: 'マネージャー',
-      user: 'ユーザー',
+      root: 'ルートユーザー',
+      admin: 'スーパー管理者',
+      manager: '管理者',
+      user: '一般ユーザー',
     },
     status: {
       active: 'アクティブ',

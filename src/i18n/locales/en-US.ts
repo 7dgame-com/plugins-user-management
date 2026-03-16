@@ -30,6 +30,7 @@ export default {
     editUser: 'Edit User',
     createUser: 'Create User',
     username: 'Username',
+    nickname: 'Nickname',
     email: 'Email',
     password: 'Password',
     newPassword: 'New Password',
@@ -41,8 +42,8 @@ export default {
     searchPlaceholder: 'Search username or email',
     role: 'Role',
     roles: {
-      root: 'Super Admin',
-      admin: 'Administrator',
+      root: 'Root',
+      admin: 'Super Admin',
       manager: 'Manager',
       user: 'User',
     },
