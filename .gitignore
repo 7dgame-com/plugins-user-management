@@ -2,12 +2,12 @@
 node_modules/
 
 # Build output
-frontend/dist/
-frontend/tsconfig.tsbuildinfo
+dist/
+tsconfig.tsbuildinfo
 
 # Environment files
-backend/.env
 .env
+*.local
 
 # IDE
 .vscode/
