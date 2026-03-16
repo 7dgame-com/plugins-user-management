@@ -87,7 +87,7 @@ const userInfo = ref<{ id: number; username: string; nickname: string; roles: st
 onMounted(async () => {
   try {
     const [{ data }] = await Promise.all([
-      api.get('/users/me'),
+      api.get('/me'),
       fetchPermissions(),
     ])
     userInfo.value = data
