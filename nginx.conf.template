@@ -24,8 +24,8 @@ server {
 
     location /health {
         access_log off;
-        return 200 'ok';
-        add_header Content-Type text/plain;
+        default_type application/json;
+        alias /usr/share/nginx/html/health.json;
     }
 
     location / {
