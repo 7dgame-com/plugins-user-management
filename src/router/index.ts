@@ -34,6 +34,12 @@ const router = createRouter({
           name: 'InvitationList',
           component: () => import('../views/InvitationList.vue'),
           meta: { title: '邀请管理' }
+        },
+        {
+          path: 'api-diagnostics',
+          name: 'ApiDiagnostics',
+          component: () => import('../views/ApiDiagnostics.vue'),
+          meta: { title: 'API 诊断' }
         }
       ]
     }
