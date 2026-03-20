@@ -1,19 +1,26 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isInIframe, getToken } from '../utils/token'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/not-allowed',
+      name: 'NotAllowed',
+      component: () => import('../views/NotAllowed.vue'),
+      meta: { title: '无法访问' }
+    },
+    {
       path: '/register',
       name: 'Register',
       component: () => import('../views/Register.vue'),
-      meta: { title: '邀请注册' }
+      meta: { title: '邀请注册', public: true }
     },
     {
       path: '/api-diagnostics',
       name: 'ApiDiagnostics',
       component: () => import('../views/ApiDiagnostics.vue'),
-      meta: { title: 'API 诊断' }
+      meta: { title: 'API 诊断', public: true }
     },
     {
       path: '/',
@@ -44,6 +51,16 @@ const router = createRouter({
       ]
     }
   ]
+})
+
+router.beforeEach((to) => {
+  if (to.name === 'NotAllowed' || to.meta.public) return true
+
+  if (!isInIframe() || !getToken()) {
+    return { name: 'NotAllowed' }
+  }
+
+  return true
 })
 
 export default router
