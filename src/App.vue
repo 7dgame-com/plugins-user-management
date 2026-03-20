@@ -23,7 +23,7 @@ const waiting = ref(false)
 const hasToken = ref(!!getToken())
 
 // 公开路由不需要 token 认证
-const PUBLIC_ROUTES = ['/register']
+const PUBLIC_ROUTES = ['/register', '/api-diagnostics']
 const isPublicRoute = computed(() => PUBLIC_ROUTES.some((p) => route.path.startsWith(p)))
 
 onMounted(() => {
