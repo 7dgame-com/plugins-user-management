@@ -28,6 +28,12 @@ server {
         alias /usr/share/nginx/html/health.json;
     }
 
+    location /debug-env {
+        access_log off;
+        default_type application/json;
+        alias /usr/share/nginx/html/debug-env.json;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

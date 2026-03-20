@@ -41,6 +41,18 @@
           <span class="label">是否在 iframe 中</span>
           <code>{{ envInfo.isIframe ? '是' : '否' }}</code>
         </div>
+        <div class="info-item">
+          <span class="label">API_UPSTREAM (Nginx 代理目标)</span>
+          <code :class="envInfo.apiUpstream === '加载中...' ? '' : envInfo.apiUpstream.startsWith('http') ? 'ok' : 'warn'">{{ envInfo.apiUpstream }}</code>
+        </div>
+        <div class="info-item">
+          <span class="label">容器 hostname</span>
+          <code>{{ envInfo.hostname || '-' }}</code>
+        </div>
+        <div class="info-item">
+          <span class="label">容器启动时间</span>
+          <code>{{ envInfo.serverBuildTime || '-' }}</code>
+        </div>
       </div>
     </div>
 
@@ -170,6 +182,9 @@ const envInfo = reactive({
   pluginApiBase: '/v1/plugin',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
+  apiUpstream: '加载中...',
+  hostname: '',
+  serverBuildTime: '',
 })
 
 // ---- API 端点定义 ----
@@ -327,8 +342,21 @@ async function runCustom() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   envInfo.hasToken = !!getToken()
+  try {
+    const resp = await fetch('/debug-env')
+    if (resp.ok) {
+      const data = await resp.json()
+      envInfo.apiUpstream = data.API_UPSTREAM || '未设置'
+      envInfo.hostname = data.hostname || ''
+      envInfo.serverBuildTime = data.buildTime || ''
+    } else {
+      envInfo.apiUpstream = `请求失败 (${resp.status})`
+    }
+  } catch (e: any) {
+    envInfo.apiUpstream = `请求异常: ${e.message}`
+  }
 })
 </script>
 
