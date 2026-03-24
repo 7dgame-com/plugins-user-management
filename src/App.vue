@@ -3,9 +3,11 @@
   <router-view v-if="isPublicRoute" />
   <div v-else-if="waiting" class="iframe-waiting">
     <p>{{ t('layout.waitingAuth') }}</p>
+    <span class="version">{{ appVersion }}</span>
   </div>
   <div v-else-if="!hasToken" class="iframe-waiting">
     <p>{{ t('layout.requireMainSystem') }}</p>
+    <span class="version">{{ appVersion }}</span>
   </div>
   <router-view v-else />
 </template>
@@ -17,6 +19,9 @@ import { useI18n } from 'vue-i18n'
 import { isInIframe, getToken, setToken, removeToken } from './utils/token'
 import { usePluginMessageBridge } from './composables/usePluginMessageBridge'
 import { setThemeFromConfig } from './composables/useTheme'
+
+declare const __APP_VERSION__: string
+const appVersion = `v${__APP_VERSION__}`
 
 const { t } = useI18n()
 
@@ -69,10 +74,16 @@ onMounted(() => {
 <style scoped>
 .iframe-waiting {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100vh;
   color: #999;
   font-size: 14px;
+}
+.version {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #ccc;
 }
 </style>
