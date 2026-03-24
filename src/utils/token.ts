@@ -27,8 +27,16 @@ export function removeAllTokens() {
 
 /**
  * 监听主框架的 postMessage，接收 INIT 消息中的 token
+ *
+ * 握手顺序：调用时立即发送 PLUGIN_READY → 主系统收到后发送 INIT → 存储 token
  */
 export function listenForParentToken(callback: (token: string) => void) {
+  // 立即发送 PLUGIN_READY，通知主系统插件已就绪
+  window.parent.postMessage({
+    type: 'PLUGIN_READY',
+    id: `ready-${Date.now()}`
+  }, '*')
+
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent) return
 
@@ -37,11 +45,6 @@ export function listenForParentToken(callback: (token: string) => void) {
     if (type === 'INIT' && payload?.token) {
       setToken(payload.token)
       callback(payload.token)
-
-      window.parent.postMessage({
-        type: 'PLUGIN_READY',
-        id: `ready-${Date.now()}`
-      }, '*')
     }
 
     if (type === 'TOKEN_UPDATE' && payload?.token) {

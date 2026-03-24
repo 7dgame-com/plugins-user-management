@@ -14,7 +14,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { isInIframe, listenForParentToken, getToken } from './utils/token'
+import { isInIframe, getToken, setToken, removeToken } from './utils/token'
+import { usePluginMessageBridge } from './composables/usePluginMessageBridge'
+import { setThemeFromConfig } from './composables/useTheme'
 
 const { t } = useI18n()
 
@@ -26,6 +28,27 @@ const hasToken = ref(!!getToken())
 const PUBLIC_ROUTES = ['/register', '/api-diagnostics']
 const isPublicRoute = computed(() => PUBLIC_ROUTES.some((p) => route.path.startsWith(p)))
 
+const { isReady } = usePluginMessageBridge({
+  onInit: (payload) => {
+    if (payload.token) {
+      setToken(payload.token)
+      hasToken.value = true
+      waiting.value = false
+    }
+    // 从 INIT config 初始化主题
+    setThemeFromConfig(payload.config)
+  },
+  onTokenUpdate: (newToken) => {
+    if (newToken) {
+      setToken(newToken)
+    }
+  },
+  onDestroy: () => {
+    removeToken()
+    hasToken.value = false
+  }
+})
+
 onMounted(() => {
   if (isPublicRoute.value) return
 
@@ -35,12 +58,7 @@ onMounted(() => {
       return
     }
     waiting.value = true
-    listenForParentToken((token) => {
-      if (token) {
-        waiting.value = false
-        hasToken.value = true
-      }
-    })
+    // usePluginMessageBridge handles PLUGIN_READY → INIT automatically
   } else {
     // 独立运行模式：检查是否已有 token（开发调试用）
     hasToken.value = !!getToken()
