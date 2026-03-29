@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import fs from 'node:fs'
+import path from 'node:path'
 
 // 生成北京时间版本号，格式：2026.03.25-0200
 function buildVersion(): string {
@@ -13,8 +15,79 @@ function buildVersion(): string {
   return `${y}.${M}.${d}-${h}${m}`
 }
 
+/**
+ * 从 src/i18n/locales/*.ts 文件里提取 pluginMeta 字段，
+ * 组装成 PluginPublicManifest JSON 字符串。
+ * 使用正则解析（无需运行时），构建时零依赖。
+ */
+function buildPluginManifest(): string {
+  const localesDir = path.resolve(__dirname, 'src/i18n/locales')
+  const langs = ['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'th-TH']
+
+  const nameI18n: Record<string, string> = {}
+  const descriptionI18n: Record<string, string> = {}
+  const groupNameI18n: Record<string, string> = {}
+
+  for (const lang of langs) {
+    const file = path.join(localesDir, `${lang}.ts`)
+    if (!fs.existsSync(file)) continue
+    const src = fs.readFileSync(file, 'utf-8')
+
+    const extract = (key: string): string | null => {
+      // 匹配 `key: '...'` 或 `key: "..."` （单行）
+      const m = src.match(new RegExp(`${key}:\\s*['"]([^'"]+)['"]`))
+      return m ? m[1] : null
+    }
+
+    const name = extract('name')
+    const description = extract('description')
+    const groupName = extract('groupName')
+
+    if (name) nameI18n[lang] = name
+    if (description) descriptionI18n[lang] = description
+    if (groupName) groupNameI18n[lang] = groupName
+  }
+
+  const manifest = {
+    id: 'user-management',
+    schemaVersion: '1',
+    nameI18n,
+    descriptionI18n,
+    group: {
+      id: 'tools',
+      nameI18n: groupNameI18n,
+    },
+  }
+
+  return JSON.stringify(manifest, null, 2)
+}
+
+/**
+ * Vite 插件：
+ * - dev 模式：在 configureServer 中注册中间件，实时响应 /plugin-manifest.json
+ * - build 模式：在 generateBundle 钩子中写入 public/plugin-manifest.json
+ */
+function pluginManifestPlugin() {
+  return {
+    name: 'plugin-manifest',
+    configureServer(server: import('vite').ViteDevServer) {
+      server.middlewares.use('/plugin-manifest.json', (_req: import('http').IncomingMessage, res: import('http').ServerResponse) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.end(buildPluginManifest())
+      })
+    },
+    buildStart() {
+      // 写到 public/ 目录，Vite build 时会自动复制到 dist/
+      const publicDir = path.resolve(__dirname, 'public')
+      if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true })
+      fs.writeFileSync(path.join(publicDir, 'plugin-manifest.json'), buildPluginManifest(), 'utf-8')
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), pluginManifestPlugin()],
   define: {
     __APP_VERSION__: JSON.stringify(buildVersion()),
   },

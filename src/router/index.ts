@@ -43,6 +43,12 @@ const router = createRouter({
           component: () => import('../views/UserForm.vue')
         },
         {
+          path: 'users/batch-create',
+          name: 'BatchCreate',
+          component: () => import('../views/BatchCreateForm.vue'),
+          meta: { title: '批量创建用户' }
+        },
+        {
           path: 'invitations',
           name: 'InvitationList',
           component: () => import('../views/InvitationList.vue'),

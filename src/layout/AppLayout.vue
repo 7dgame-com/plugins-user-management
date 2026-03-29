@@ -37,6 +37,16 @@
           <span>添加用户</span>
         </router-link>
         <router-link
+          v-if="can('create-user')"
+          to="/users/batch-create"
+          class="sidebar-item"
+          :class="{ active: $route.path === '/users/batch-create' }"
+          @click="sidebarOpen = false"
+        >
+          <el-icon><DocumentCopy /></el-icon>
+          <span>批量创建</span>
+        </router-link>
+        <router-link
           v-if="can('manage-invitations')"
           to="/invitations"
           class="sidebar-item"
@@ -75,7 +85,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Close, User, Plus, Fold, Link } from '@element-plus/icons-vue'
+import { Close, User, Plus, Fold, Link, DocumentCopy } from '@element-plus/icons-vue'
 import api from '../api'
 import { usePermissions } from '../composables/usePermissions'
 

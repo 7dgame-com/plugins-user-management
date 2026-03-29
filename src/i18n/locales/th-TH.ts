@@ -1,6 +1,10 @@
 export default {
+  pluginMeta: {
+    name: 'การจัดการผู้ใช้',
+    description: 'เครื่องมือจัดการผู้ใช้ CRUD',
+    groupName: 'เครื่องมือ',
+  },
   common: {
-    search: 'ค้นหา',
     add: 'เพิ่ม',
     edit: 'แก้ไข',
     delete: 'ลบ',

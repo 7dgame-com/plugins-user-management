@@ -122,3 +122,39 @@ setupInterceptors(pluginApi)
 // 默认导出 userApi（用户管理接口），同时具名导出 pluginApi
 export default userApi
 export { pluginApi }
+
+// --- Batch Create Users API ---
+
+export interface BatchCreateUserItem {
+  username: string
+  nickname: string
+  password: string
+  role: string
+  status: number
+}
+
+export interface BatchCreatePayload {
+  users: BatchCreateUserItem[]
+}
+
+export interface BatchCreateResultItem {
+  index: number
+  username: string
+  success: boolean
+  id?: number
+  error?: string
+}
+
+export interface BatchCreateResult {
+  code: number
+  data: {
+    total: number
+    success: number
+    failed: number
+    results: BatchCreateResultItem[]
+  }
+}
+
+export function batchCreateUsers(payload: BatchCreatePayload): Promise<{ data: BatchCreateResult }> {
+  return userApi.post('/batch-create-users', payload)
+}

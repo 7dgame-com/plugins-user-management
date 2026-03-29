@@ -1,6 +1,10 @@
 export default {
+  pluginMeta: {
+    name: '用戶管理',
+    description: '用戶增删改查管理工具',
+    groupName: '實用工具',
+  },
   common: {
-    search: '搜尋',
     add: '新增',
     edit: '編輯',
     delete: '刪除',

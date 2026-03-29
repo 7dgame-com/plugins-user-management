@@ -1,0 +1,28 @@
+{
+  "id": "user-management",
+  "schemaVersion": "1",
+  "nameI18n": {
+    "zh-CN": "用户管理",
+    "zh-TW": "用戶管理",
+    "en-US": "User Management",
+    "ja-JP": "ユーザー管理",
+    "th-TH": "การจัดการผู้ใช้"
+  },
+  "descriptionI18n": {
+    "zh-CN": "用户增删改查管理工具",
+    "zh-TW": "用戶增删改查管理工具",
+    "en-US": "User CRUD management tool",
+    "ja-JP": "ユーザーのCRUD管理ツール",
+    "th-TH": "เครื่องมือจัดการผู้ใช้ CRUD"
+  },
+  "group": {
+    "id": "tools",
+    "nameI18n": {
+      "zh-CN": "实用工具",
+      "zh-TW": "實用工具",
+      "en-US": "Utilities",
+      "ja-JP": "ユーティリティ",
+      "th-TH": "เครื่องมือ"
+    }
+  }
+}

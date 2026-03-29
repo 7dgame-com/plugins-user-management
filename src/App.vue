@@ -3,13 +3,14 @@
   <router-view v-if="isPublicRoute" />
   <div v-else-if="waiting" class="iframe-waiting">
     <p>{{ t('layout.waitingAuth') }}</p>
-    <span class="version">{{ appVersion }}</span>
   </div>
   <div v-else-if="!hasToken" class="iframe-waiting">
     <p>{{ t('layout.requireMainSystem') }}</p>
-    <span class="version">{{ appVersion }}</span>
   </div>
   <router-view v-else />
+
+  <!-- 全局版本号 -->
+  <span class="global-version">{{ appVersion }}</span>
 </template>
 
 <script setup lang="ts">
@@ -81,9 +82,14 @@ onMounted(() => {
   color: #999;
   font-size: 14px;
 }
-.version {
-  margin-top: 8px;
+.global-version {
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
   font-size: 11px;
   color: #ccc;
+  pointer-events: none;
+  z-index: 9999;
+  user-select: none;
 }
 </style>

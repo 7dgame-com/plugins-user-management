@@ -18,6 +18,9 @@
         <el-icon><Plus /></el-icon>
         {{ t('user.addUser') }}
       </el-button>
+      <el-button v-if="can('create-user')" @click="$router.push('/users/batch-create')">
+        {{ t('user.batch.title') }}
+      </el-button>
     </div>
 
     <!-- 用户表格 -->

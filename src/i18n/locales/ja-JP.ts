@@ -1,6 +1,10 @@
 export default {
+  pluginMeta: {
+    name: 'ユーザー管理',
+    description: 'ユーザーのCRUD管理ツール',
+    groupName: 'ユーティリティ',
+  },
   common: {
-    search: '検索',
     add: '追加',
     edit: '編集',
     delete: '削除',
