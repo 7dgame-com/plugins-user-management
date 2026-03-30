@@ -1,15 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { isInIframe, getToken } from '../utils/token'
+import { isInIframe } from '../utils/token'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    {
-      path: '/not-allowed',
-      name: 'NotAllowed',
-      component: () => import('../views/NotAllowed.vue'),
-      meta: { title: '无法访问' }
-    },
     {
       path: '/register',
       name: 'Register',
@@ -60,10 +54,12 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  if (to.name === 'NotAllowed' || to.meta.public) return true
+  if (to.meta.public) return true
 
-  if (!isInIframe() || !getToken()) {
-    return { name: 'NotAllowed' }
+  // 只拦截非 iframe 的直接访问，iframe 内的 token 等待由 App.vue 处理
+  if (!isInIframe()) {
+    // App.vue 会显示"请从主系统打开此插件"，路由正常放行
+    return true
   }
 
   return true
