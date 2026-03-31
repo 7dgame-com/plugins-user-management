@@ -11,7 +11,5 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker-entrypoint.sh /docker-entrypoint-custom.sh
 RUN chmod +x /docker-entrypoint-custom.sh
 RUN echo "{\"status\":\"ok\",\"buildTime\":\"$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')\"}" > /usr/share/nginx/html/health.json
-ENV API_UPSTREAM=http://localhost
-ENV NGINX_ENVSUBST_FILTER=API_UPSTREAM
 EXPOSE 80
 ENTRYPOINT ["/docker-entrypoint-custom.sh"]

@@ -223,6 +223,10 @@ async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  if (form.role === 'root') {
+    ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
+    return
+  }
   phase.value = 'submitting'
   const usernames = generateNames(usernameParsed.value, form.startNumber, form.count)
   const nicknames = generateNames(nicknameParsed.value, form.startNumber, form.count)

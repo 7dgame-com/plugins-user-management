@@ -94,9 +94,10 @@ export default defineConfig({
   server: {
     port: 3003,
     proxy: {
-      '/v1': {
+      '/api': {
         target: 'http://localhost:8081',
-        changeOrigin: true
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/api/, '')
       }
     }
   },

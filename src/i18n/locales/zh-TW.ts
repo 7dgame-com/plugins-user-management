@@ -140,5 +140,6 @@ export default {
   layout: {
     waitingAuth: '等待主系統授權...',
     requireMainSystem: '請從主系統開啟此外掛',
+    noToken: '無法開啟介面，請從主系統登入後重試',
   },
 }

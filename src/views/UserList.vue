@@ -33,7 +33,7 @@
         <el-table-column prop="roles" :label="t('user.role')" width="160" sortable="custom">
           <template #default="{ row }">
             <el-select
-              v-if="can('change-role') && canChangeRole(row)"
+              v-if="can('change-role') && canChangeRole(row) && !isRootUser(row)"
               :model-value="getHighestRole(row.roles)"
               size="small"
               @change="(val: string) => handleRoleChange(row, val)"
@@ -56,14 +56,21 @@
         </el-table-column>
         <el-table-column v-if="can('update-user') || can('delete-user')" :label="t('common.actions')" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="can('update-user')" link type="primary" @click="$router.push(`/users/${row.id}/edit`)">
-              {{ t('common.edit') }}
-            </el-button>
-            <el-popconfirm v-if="can('delete-user')" :title="t('user.deleteConfirm')" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button link type="danger">{{ t('common.delete') }}</el-button>
-              </template>
-            </el-popconfirm>
+            <template v-if="isRootUser(row)">
+              <el-tooltip content="根用户不可操作" placement="top">
+                <span style="color: #c0c4cc; font-size: 13px; cursor: not-allowed">受保护</span>
+              </el-tooltip>
+            </template>
+            <template v-else>
+              <el-button v-if="can('update-user')" link type="primary" @click="$router.push(`/users/${row.id}/edit`)">
+                {{ t('common.edit') }}
+              </el-button>
+              <el-popconfirm v-if="can('delete-user')" :title="t('user.deleteConfirm')" @confirm="handleDelete(row.id)">
+                <template #reference>
+                  <el-button link type="danger">{{ t('common.delete') }}</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -129,10 +136,14 @@ function canChangeRole(row: any): boolean {
   return targetLevel <= myLevel
 }
 
+function isRootUser(row: any): boolean {
+  return Array.isArray(row.roles) && row.roles.includes('root')
+}
+
 const availableRoleOptions = computed(() => {
   const myLevel = getRoleLevel(currentUserRoles.value)
   return Object.entries(ROLE_PRIORITY)
-    .filter(([, level]) => level <= myLevel)
+    .filter(([role, level]) => level <= myLevel && role !== 'root')
     .sort(([, a], [, b]) => b - a)
     .map(([role]) => ({ value: role, label: t(`user.roles.${role}`) }))
 })
@@ -169,6 +180,10 @@ async function fetchUsers() {
 }
 
 async function handleRoleChange(row: any, newRole: string) {
+  if (newRole === 'root') {
+    ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
+    return
+  }
   try {
     await api.post('/change-role', { id: row.id, role: newRole })
     ElMessage.success(t('user.messages.roleChangeSuccess'))

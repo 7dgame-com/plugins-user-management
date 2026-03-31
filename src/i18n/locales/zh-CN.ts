@@ -181,5 +181,6 @@ export default {
   layout: {
     waitingAuth: '等待主系统授权...',
     requireMainSystem: '请从主系统打开此插件',
+    noToken: '无法打开界面，请从主系统登录后重试',
   },
 }

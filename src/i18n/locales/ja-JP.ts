@@ -141,5 +141,6 @@ export default {
   layout: {
     waitingAuth: '認証を待っています...',
     requireMainSystem: 'メインシステムからこのプラグインを開いてください',
+    noToken: 'インターフェースを開けません。メインシステムからログインして再試行してください。',
   },
 }

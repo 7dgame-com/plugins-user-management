@@ -11,6 +11,10 @@
     // 在 Vue 挂载前尽早注册 message 监听器，避免错过主框架的 INIT 消息
     (function() {
       window.__EARLY_INIT_PAYLOAD__ = null;
+      // 只在 iframe 内才监听并存储 token，防止直接访问时复用旧 token
+      var inIframe = false;
+      try { inIframe = window.self !== window.top; } catch(e) { inIframe = true; }
+      if (!inIframe) return;
       window.addEventListener('message', function earlyHandler(event) {
         if (event.source !== window.parent) return;
         var data = event.data || {};

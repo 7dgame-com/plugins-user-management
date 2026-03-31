@@ -98,7 +98,7 @@ function getHighestRole(roles?: string[]): string {
 const availableRoleOptions = computed(() => {
   const myLevel = getRoleLevel(currentUserRoles.value)
   return Object.entries(ROLE_PRIORITY)
-    .filter(([, level]) => level <= myLevel)
+    .filter(([role, level]) => level <= myLevel && role !== 'root')
     .sort(([, a], [, b]) => b - a)
     .map(([role]) => ({ value: role, label: t(`user.roles.${role}`) }))
 })
@@ -134,6 +134,12 @@ async function loadUser() {
   try {
     const { data } = await api.get('/users', { params: { id: route.params.id } })
     const user = data.data
+    // 根用户不允许编辑
+    if (Array.isArray(user.roles) && user.roles.includes('root')) {
+      ElMessage.error(t('user.messages.rootUserProtected', '根用户不允许修改'))
+      router.replace('/users')
+      return
+    }
     form.username = user.username
     form.email = user.email || ''
     form.status = user.status
@@ -162,6 +168,10 @@ async function handleSubmit() {
       await api.post('/update-user', { id: route.params.id, ...payload })
       // If role changed, update separately
       if (canEditRole.value && form.role && form.role !== originalRole.value) {
+        if (form.role === 'root') {
+          ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
+          return
+        }
         await api.post('/change-role', { id: route.params.id, role: form.role })
       }
       ElMessage.success(t('user.messages.updateSuccess'))

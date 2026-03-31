@@ -56,6 +56,74 @@
       </div>
     </div>
 
+    <!-- 反向代理检测 -->
+    <div class="section">
+      <h3>反向代理连通性检测</h3>
+      <p class="hint">直接用 fetch 探测各 Nginx proxy_pass location，检测代理是否正确配置并能到达后端</p>
+      <el-button type="primary" :loading="runningProxy" @click="runAllProxy" style="margin-bottom: 12px">全部检测</el-button>
+      <el-table :data="proxyTests" stripe border>
+        <el-table-column prop="name" label="代理路径" width="220" />
+        <el-table-column label="请求 URL" min-width="300">
+          <template #default="{ row }">
+            <code class="url">{{ row.url }}</code>
+          </template>
+        </el-table-column>
+        <el-table-column label="预期后端" width="240">
+          <template #default="{ row }">
+            <code class="url">{{ row.expectedBackend }}</code>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="140">
+          <template #default="{ row }">
+            <el-tag v-if="row.status === 'pending'" type="info" size="small">待检测</el-tag>
+            <el-tag v-else-if="row.status === 'loading'" type="warning" size="small">
+              <el-icon class="is-loading"><Loading /></el-icon> 检测中
+            </el-tag>
+            <el-tag v-else-if="row.status === 'success'" type="success" size="small">
+              {{ row.httpStatus }} 可达
+            </el-tag>
+            <el-tag v-else-if="row.status === 'proxy-error'" type="danger" size="small">
+              {{ row.httpStatus }} 代理异常
+            </el-tag>
+            <el-tag v-else type="danger" size="small">
+              {{ row.httpStatus || '不可达' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="诊断结果" min-width="380">
+          <template #default="{ row }">
+            <div v-if="row.status !== 'pending' && row.status !== 'loading'" class="resp-detail">
+              <div class="diag-verdict" :class="row.verdict">
+                {{ row.verdictIcon }} {{ row.verdictText }}
+              </div>
+              <div v-if="row.upstreamAddr" class="upstream-addr">
+                📡 Nginx 实际连接的后端: <code>{{ row.upstreamAddr }}</code>
+              </div>
+              <div v-if="row.finalUrl && row.finalUrl !== row.url" class="redirect-warn">
+                ⚠️ 重定向到: <code>{{ row.finalUrl }}</code>
+              </div>
+              <div v-if="row.responseHeaders" class="resp-headers">
+                <span class="label">关键响应头:</span>
+                <code>{{ row.responseHeaders }}</code>
+              </div>
+              <div class="resp-body">
+                <span class="label">响应体 (前300字):</span>
+                <pre>{{ row.responseBody }}</pre>
+              </div>
+              <div v-if="row.latency" class="latency">
+                ⏱ 响应耗时: {{ row.latency }}ms
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="runProxyTest(row)">检测</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
     <!-- API 测试结果 -->
     <div class="section">
       <h3>API 端点测试</h3>
@@ -178,8 +246,8 @@ import { getToken, isInIframe } from '../utils/token'
 const envInfo = reactive({
   location: window.location.href,
   origin: window.location.origin,
-  userApiBase: '/v1/plugin-user',
-  pluginApiBase: '/v1/plugin',
+  userApiBase: api.defaults.baseURL || '/api/v1/plugin-user',
+  pluginApiBase: pluginApi.defaults.baseURL || '/api/v1/plugin',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
   apiUpstream: '加载中...',
@@ -204,7 +272,7 @@ interface TestItem {
 }
 
 function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi', path: string, params?: Record<string, any>): TestItem {
-  const base = instance === 'userApi' ? '/v1/plugin-user' : '/v1/plugin'
+  const base = instance === 'userApi' ? (api.defaults.baseURL || '/api/v1/plugin-user') : (pluginApi.defaults.baseURL || '/api/v1/plugin')
   const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
   return {
     name, method, instance, path, params,
@@ -277,10 +345,11 @@ interface RawTestItem {
 }
 
 const rawTests = ref<RawTestItem[]>([
-  { name: 'userApi /users', url: '/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /verify-token', url: '/v1/plugin/verify-token?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /allowed-actions', url: '/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'userApi /users', url: '/api/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'pluginApi /verify-token', url: '/api/v1/plugin/verify-token?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'pluginApi /allowed-actions', url: '/api/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Health Check', url: '/health', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'Debug Env', url: '/debug-env', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
 ])
 
 async function runRawTest(item: RawTestItem) {
@@ -342,17 +411,166 @@ async function runCustom() {
   }
 }
 
+// ---- 反向代理连通性检测 ----
+interface ProxyTestItem {
+  name: string
+  url: string
+  expectedBackend: string
+  status: 'pending' | 'loading' | 'success' | 'proxy-error' | 'error'
+  httpStatus: number | string
+  responseHeaders: string
+  responseBody: string
+  finalUrl: string
+  upstreamAddr: string
+  latency: number | null
+  verdict: 'ok' | 'warn' | 'fail'
+  verdictIcon: string
+  verdictText: string
+}
+
+function makeProxyTest(name: string, url: string, expectedBackend: string): ProxyTestItem {
+  return {
+    name, url, expectedBackend,
+    status: 'pending', httpStatus: '', responseHeaders: '', responseBody: '',
+    finalUrl: '', upstreamAddr: '', latency: null, verdict: 'ok', verdictIcon: '', verdictText: '',
+  }
+}
+
+const proxyTests = ref<ProxyTestItem[]>([
+  makeProxyTest('/api/ → 后端 API', '/api/v1/plugin-user/users?page=1&pageSize=1', 'proxy_pass → API 后端'),
+  makeProxyTest('/api/ → plugin 接口', '/api/v1/plugin/allowed-actions?plugin_name=user-management', 'proxy_pass → API 后端'),
+  makeProxyTest('/health → 健康检查', '/health', '本地 Nginx 直接返回'),
+  makeProxyTest('/debug-env → 调试环境', '/debug-env', '本地 Nginx 静态文件'),
+  makeProxyTest('/ → 前端静态文件', '/', '本地 Nginx try_files'),
+])
+
+async function runProxyTest(item: ProxyTestItem) {
+  item.status = 'loading'
+  item.responseBody = ''
+  item.responseHeaders = ''
+  item.finalUrl = ''
+  item.latency = null
+  item.verdict = 'ok'
+  item.verdictIcon = ''
+  item.verdictText = ''
+
+  const start = performance.now()
+  try {
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const resp = await fetch(item.url, { headers })
+    item.latency = Math.round(performance.now() - start)
+    item.httpStatus = resp.status
+    // 只有真正发生了跨路径重定向才显示（排除 relative→absolute 的正常差异）
+    const expectedAbsolute = new URL(item.url, window.location.href).href
+    item.finalUrl = resp.url !== expectedAbsolute ? resp.url : ''
+
+    // 收集关键响应头
+    const headerNames = ['content-type', 'server', 'x-powered-by', 'x-request-id']
+    const headerParts: string[] = []
+    headerNames.forEach(h => {
+      const v = resp.headers.get(h)
+      if (v) headerParts.push(`${h}: ${v}`)
+    })
+    item.upstreamAddr = resp.headers.get('x-upstream-addr') || ''
+    item.responseHeaders = headerParts.join(' | ')
+
+    const text = await resp.text()
+    item.responseBody = text.slice(0, 300)
+
+    // 诊断判定
+    if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
+      item.status = 'proxy-error'
+      item.verdict = 'fail'
+      item.verdictIcon = '❌'
+      item.verdictText = `代理目标不可达 (${resp.status})，Nginx 无法连接后端服务`
+    } else if (resp.status === 404 && text.includes('<html')) {
+      // Nginx 返回了自己的 404 页面，说明没有匹配到 proxy location
+      item.status = 'error'
+      item.verdict = 'warn'
+      item.verdictIcon = '⚠️'
+      item.verdictText = 'Nginx 未匹配到代理规则，返回了静态 404'
+    } else if (resp.ok) {
+      item.status = 'success'
+      item.verdict = 'ok'
+      item.verdictIcon = '✅'
+      item.verdictText = '代理正常，后端已响应'
+    } else {
+      // 4xx 来自后端（说明代理本身是通的）
+      item.status = 'success'
+      item.verdict = 'ok'
+      item.verdictIcon = '✅'
+      item.verdictText = `代理连通（后端返回 ${resp.status}，可能需要认证或参数）`
+    }
+  } catch (err: any) {
+    item.latency = Math.round(performance.now() - start)
+    item.status = 'error'
+    item.httpStatus = 'N/A'
+    item.verdict = 'fail'
+    item.verdictIcon = '❌'
+    item.verdictText = `请求失败: ${err.message}`
+  }
+}
+
+const runningProxy = ref(false)
+async function runAllProxy() {
+  runningProxy.value = true
+  for (const t of proxyTests.value) {
+    await runProxyTest(t)
+  }
+  runningProxy.value = false
+}
+
 onMounted(async () => {
   envInfo.hasToken = !!getToken()
   try {
     const resp = await fetch('/debug-env')
-    if (resp.ok) {
-      const data = await resp.json()
-      envInfo.apiUpstream = data.API_UPSTREAM || '未设置'
+    const text = await resp.text()
+    if (!resp.ok) {
+      envInfo.apiUpstream = `请求失败 (${resp.status})`
+    } else {
+      let data: Record<string, string> = {}
+      try {
+        data = JSON.parse(text)
+      } catch {
+        envInfo.apiUpstream = `/debug-env 返回了非 JSON 内容（可能未配置该 location）`
+        return
+      }
+      const upstreams: string[] = []
+      // 按序号收集所有 APP_API_N_URL
+      const backendUrls: string[] = []
+      let i = 1
+      while (data[`APP_API_${i}_URL`]) {
+        backendUrls.push(data[`APP_API_${i}_URL`])
+        upstreams.push(`APP_API_${i}_URL=${data[`APP_API_${i}_URL`]}`)
+        i++
+      }
+      // 兜底：无序号变量
+      if (!backendUrls.length && data.API_UPSTREAM) {
+        backendUrls.push(data.API_UPSTREAM)
+        upstreams.push(`API_UPSTREAM=${data.API_UPSTREAM}`)
+      }
+      envInfo.apiUpstream = upstreams.length ? upstreams.join(' | ') : '未设置'
       envInfo.hostname = data.hostname || ''
       envInfo.serverBuildTime = data.buildTime || ''
-    } else {
-      envInfo.apiUpstream = `请求失败 (${resp.status})`
+
+      // 用全部真实后端地址更新代理测试的「预期后端」列（failover 链式显示）
+      if (backendUrls.length) {
+        proxyTests.value.forEach(t => {
+          if (t.url.startsWith('/api/')) {
+            const backendPath = t.url.replace(/^\/api/, '')
+            if (backendUrls.length === 1) {
+              t.expectedBackend = backendUrls[0].replace(/\/$/, '') + backendPath
+            } else {
+              // 多个后端：显示 failover 链
+              t.expectedBackend = backendUrls
+                .map((u, idx) => `[${idx + 1}] ${u.replace(/\/$/, '') + backendPath}`)
+                .join(' → ')
+            }
+          }
+        })
+      }
     }
   } catch (e: any) {
     envInfo.apiUpstream = `请求异常: ${e.message}`
@@ -444,5 +662,29 @@ code.url { font-size: 12px; word-break: break-all; }
   word-break: break-all;
   max-height: 300px;
   overflow: auto;
+}
+.diag-verdict {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.diag-verdict.ok { color: #67c23a; }
+.diag-verdict.warn { color: #e6a23c; }
+.diag-verdict.fail { color: #f56c6c; }
+.upstream-addr {
+  margin: 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #409eff;
+}
+.upstream-addr code {
+  background: #ecf5ff;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.latency {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 4px;
 }
 </style>

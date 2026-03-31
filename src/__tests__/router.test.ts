@@ -1,32 +1,43 @@
-import { describe, it, expect } from 'vitest'
-import router from '../router'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-describe('router', () => {
-  it('has /register route', () => {
-    const routes = router.getRoutes()
-    const register = routes.find(r => r.path === '/register')
-    expect(register).toBeDefined()
-    expect(register?.name).toBe('Register')
+const mockCan = vi.fn()
+
+vi.mock('../composables/usePermissions', () => ({
+  usePermissions: () => ({ can: mockCan }),
+}))
+vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn() } }))
+vi.mock('../utils/token', () => ({ isInIframe: vi.fn().mockReturnValue(true) }))
+
+import { permissionGuard } from '../router/index'
+
+const to = (meta: Record<string, unknown>) => ({ meta })
+const from = (name?: string) => ({ name: name ?? null })
+
+describe('Bug Condition Exploration', () => {
+  beforeEach(() => { mockCan.mockReturnValue(false) })
+
+  it('Bug 4: guard returns false when permission is denied', () => {
+    const result = permissionGuard(
+      to({ requiresPermission: 'list-users' }),
+      from('Home')
+    )
+    expect(result).toBe(false) // FAILS on unfixed code (returns true)
+  })
+})
+
+describe('Preservation', () => {
+  it('meta.public routes pass through regardless of permissions', () => {
+    mockCan.mockReturnValue(false)
+    expect(permissionGuard(to({ public: true }), from())).toBe(true)
   })
 
-  it('has /users route', () => {
-    const routes = router.getRoutes()
-    const users = routes.find(r => r.path === '/users')
-    expect(users).toBeDefined()
-    expect(users?.name).toBe('UserList')
+  it('routes without requiresPermission pass through', () => {
+    mockCan.mockReturnValue(false)
+    expect(permissionGuard(to({}), from())).toBe(true)
   })
 
-  it('has /users/create route', () => {
-    const routes = router.getRoutes()
-    const create = routes.find(r => r.path === '/users/create')
-    expect(create).toBeDefined()
-    expect(create?.name).toBe('UserCreate')
-  })
-
-  it('has /invitations route', () => {
-    const routes = router.getRoutes()
-    const invitations = routes.find(r => r.path === '/invitations')
-    expect(invitations).toBeDefined()
-    expect(invitations?.name).toBe('InvitationList')
+  it('routes with permission granted pass through', () => {
+    mockCan.mockReturnValue(true)
+    expect(permissionGuard(to({ requiresPermission: 'list-users' }), from('Home'))).toBe(true)
   })
 })

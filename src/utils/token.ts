@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'user-mgmt-token'
+const REFRESH_TOKEN_KEY = 'user-mgmt-refresh-token'
 
 /** 是否在 iframe 中运行 */
 export function isInIframe(): boolean {
@@ -21,23 +22,31 @@ export function removeToken() {
   localStorage.removeItem(TOKEN_KEY)
 }
 
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY)
+}
+
+export function setRefreshToken(token: string) {
+  localStorage.setItem(REFRESH_TOKEN_KEY, token)
+}
+
+export function removeRefreshToken() {
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+}
+
 export function removeAllTokens() {
   removeToken()
+  removeRefreshToken()
 }
 
 /**
- * 监听主框架的 postMessage，接收 INIT 消息中的 token
+ * 监听主框架的 postMessage，接收 INIT / TOKEN_UPDATE / DESTROY 消息
  *
- * 握手顺序：调用时立即发送 PLUGIN_READY → 主系统收到后发送 INIT → 存储 token
+ * 返回 cleanup 函数，调用方应在组件卸载时（onBeforeUnmount）执行以移除监听器。
+ * 注意：PLUGIN_READY 握手由 usePluginMessageBridge 统一负责，此函数不再发送。
  */
-export function listenForParentToken(callback: (token: string) => void) {
-  // 立即发送 PLUGIN_READY，通知主系统插件已就绪
-  window.parent.postMessage({
-    type: 'PLUGIN_READY',
-    id: `ready-${Date.now()}`
-  }, '*')
-
-  window.addEventListener('message', (event) => {
+export function listenForParentToken(callback: (token: string) => void): () => void {
+  function handleMessage(event: MessageEvent) {
     if (event.source !== window.parent) return
 
     const { type, payload } = event.data || {}
@@ -55,7 +64,10 @@ export function listenForParentToken(callback: (token: string) => void) {
     if (type === 'DESTROY') {
       removeAllTokens()
     }
-  })
+  }
+
+  window.addEventListener('message', handleMessage)
+  return () => window.removeEventListener('message', handleMessage)
 }
 
 /**

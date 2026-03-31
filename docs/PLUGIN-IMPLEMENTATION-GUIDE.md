@@ -32,16 +32,16 @@
 │  插件 (独立 Web 应用，任意框架)                                │
 │                                                              │
 │  nginx 反向代理                                               │
-│  ├─ /v1/plugin-user/ → 主后端 API                             │
-│  ├─ /v1/plugin/      → 主后端 API                             │
-│  └─ /                 → SPA 静态文件                           │
+│  ├─ /api/ → 主后端 API（${API_UPSTREAM}）                     │
+│  └─ /     → SPA 静态文件                                      │
 │                                                              │
 │  前端                                                         │
-│  ├─ token.ts      — 接收/存储/刷新 Token                      │
-│  ├─ useTheme.ts   — 主题同步                                  │
-│  ├─ usePermissions — 权限查询                                  │
-│  ├─ api/index.ts  — axios 实例 + 拦截器                       │
-│  └─ router        — 路由守卫                                  │
+│  ├─ token.ts                  — Token 存取 + 刷新请求         │
+│  ├─ usePluginMessageBridge.ts — iframe ↔ 主系统通信桥         │
+│  ├─ useTheme.ts               — 主题同步                      │
+│  ├─ usePermissions.ts         — 权限查询                      │
+│  ├─ api/index.ts              — axios 双实例 + 拦截器          │
+│  └─ router                    — 路由守卫                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -157,7 +157,9 @@ iframe sandbox 属性：
 allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox
 ```
 
-### 3.3 插件侧（token.ts）
+### 3.3 插件侧（token.ts + usePluginMessageBridge）
+
+`token.ts` 只负责 token 的存取和刷新请求，不再直接监听消息。消息监听统一由 `usePluginMessageBridge` composable 处理（见第 15 节）。
 
 ```typescript
 const TOKEN_KEY = 'user-mgmt-token'  // 每个插件用独立的 key
@@ -174,32 +176,30 @@ export function setToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token)
 }
 
-// 监听主框架消息
-export function listenForParentToken(callback: (token: string) => void) {
-  window.addEventListener('message', (event) => {
-    if (event.source !== window.parent) return
-    const { type, payload } = event.data || {}
-
-    if (type === 'INIT' && payload?.token) {
-      setToken(payload.token)
-      callback(payload.token)
-      // 回复 PLUGIN_READY
-      window.parent.postMessage({
-        type: 'PLUGIN_READY',
-        id: `ready-${Date.now()}`
-      }, '*')
-    }
-
-    if (type === 'TOKEN_UPDATE' && payload?.token) {
-      setToken(payload.token)
-      callback(payload.token)
-    }
-
-    if (type === 'DESTROY') {
-      removeAllTokens()
-    }
-  })
+export function removeToken() {
+  localStorage.removeItem(TOKEN_KEY)
 }
+```
+
+`App.vue` 通过 `usePluginMessageBridge` 的回调处理 token 存储：
+
+```typescript
+const { isReady } = usePluginMessageBridge({
+  onInit: (payload) => {
+    if (payload.token) {
+      setToken(payload.token)
+      hasToken.value = true
+    }
+    setThemeFromConfig(payload.config)  // 从 INIT config 初始化主题
+  },
+  onTokenUpdate: (newToken) => {
+    if (newToken) setToken(newToken)
+  },
+  onDestroy: () => {
+    removeToken()
+    hasToken.value = false
+  }
+})
 ```
 
 ### 3.4 Token 刷新机制
@@ -227,13 +227,14 @@ export function requestParentTokenRefresh(): Promise<{ accessToken: string } | n
 
 ### 4.1 App.vue 入口守卫
 
-App.vue 作为第一道防线，区分公开路由和需要认证的路由：
+App.vue 作为第一道防线，区分公开路由和需要认证的路由。认证逻辑通过 `usePluginMessageBridge` 统一处理，不再手动调用 `listenForParentToken`：
 
 ```vue
 <template>
+  <!-- 公开页面（如注册页）不需要 token -->
   <router-view v-if="isPublicRoute" />
-  <div v-else-if="waiting">等待认证中...</div>
-  <div v-else-if="!hasToken">需要从主系统访问</div>
+  <div v-else-if="waiting">等待主系统授权...</div>
+  <div v-else-if="!hasToken">无法打开界面，请从主系统登录后重试</div>
   <router-view v-else />
 </template>
 
@@ -243,15 +244,27 @@ const isPublicRoute = computed(() =>
   PUBLIC_ROUTES.some(p => route.path.startsWith(p))
 )
 
+const { isReady } = usePluginMessageBridge({
+  onInit: (payload) => {
+    if (payload.token) {
+      setToken(payload.token)
+      hasToken.value = true
+      waiting.value = false
+    }
+    setThemeFromConfig(payload.config)
+  },
+  onTokenUpdate: (newToken) => { if (newToken) setToken(newToken) },
+  onDestroy: () => { removeToken(); hasToken.value = false }
+})
+
 onMounted(() => {
   if (isPublicRoute.value) return
   if (isInIframe()) {
     if (getToken()) { hasToken.value = true; return }
     waiting.value = true
-    listenForParentToken((token) => {
-      waiting.value = false
-      hasToken.value = true
-    })
+    // usePluginMessageBridge 自动发送 PLUGIN_READY，等待 INIT 回调
+  } else {
+    hasToken.value = !!getToken()
   }
 })
 </script>
@@ -259,14 +272,12 @@ onMounted(() => {
 
 ### 4.2 Router beforeEach 守卫
 
+实际实现中，路由守卫只做公开路由放行，不强制跳转 NotAllowed 页面——非 iframe 访问时由 App.vue 显示提示信息，路由正常放行：
+
 ```typescript
 router.beforeEach((to) => {
-  // 公开页面和错误页面直接放行
-  if (to.name === 'NotAllowed' || to.meta.public) return true
-  // 非 iframe 或无 token → 跳转到 NotAllowed
-  if (!isInIframe() || !getToken()) {
-    return { name: 'NotAllowed' }
-  }
+  if (to.meta.public) return true
+  // 非 iframe 访问：App.vue 会显示"请从主系统打开此插件"，路由正常放行
   return true
 })
 ```
@@ -288,7 +299,7 @@ router.beforeEach((to) => {
 
 ### 5.1 nginx.conf.template
 
-插件使用 nginx 模板文件，通过环境变量 `API_UPSTREAM` 动态配置后端地址：
+插件使用 nginx 模板文件，通过环境变量 `API_UPSTREAM` 动态配置后端地址。所有 `/api/` 请求统一代理到主后端：
 
 ```nginx
 server {
@@ -297,22 +308,17 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # CORS 头
+    # Docker 内置 DNS，使用变量的 proxy_pass 必须指定 resolver
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
     add_header 'Access-Control-Allow-Origin' '*' always;
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
 
-    # 业务 API 反向代理 → 主后端
-    location /v1/plugin-user/ {
-        proxy_pass ${API_UPSTREAM}/v1/plugin-user/;
-        proxy_set_header Host $proxy_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_ssl_server_name on;
-    }
-
-    location /v1/plugin/ {
-        proxy_pass ${API_UPSTREAM}/v1/plugin/;
+    # 所有业务 API 统一代理到主后端
+    location /api/ {
+        set $api_upstream ${API_UPSTREAM};
+        proxy_pass $api_upstream/;
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -337,11 +343,10 @@ server {
 
 | 前端请求路径 | 代理目标 | 说明 |
 |-------------|---------|------|
-| `/v1/plugin-user/*` | `${API_UPSTREAM}/v1/plugin-user/*` | 插件专属业务 API |
-| `/v1/plugin/*` | `${API_UPSTREAM}/v1/plugin/*` | 通用插件认证/权限 API |
+| `/api/*` | `${API_UPSTREAM}/*` | 所有 API 请求（含 `/api/v1/plugin-user/` 和 `/api/v1/plugin/`） |
 | `/*` | 本地静态文件 | SPA 页面 |
 
-新插件只需修改第一条规则的路径前缀（如 `/v1/plugin-school/`），第二条 `/v1/plugin/` 是所有插件共用的。
+> 注意：user-management 使用单一 `/api/` 前缀统一代理，与文档中描述的分路径代理模式不同。新插件可根据需要选择单一前缀或分路径代理。
 
 ### 5.3 开发环境代理（vite.config.ts）
 
@@ -350,9 +355,10 @@ export default defineConfig({
   server: {
     port: 3003,
     proxy: {
-      '/v1': {
+      '/api': {
         target: 'http://localhost:8081',  // 主后端 API
-        changeOrigin: true
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
       }
     }
   }
@@ -435,6 +441,8 @@ xrugc-user-management:
 
 ### 7.2 通用 API（所有插件共用）
 
+> 完整参数和响应格式参见权威来源：[`web/docs/plugin-auth-api-reference.md`](../../../web/docs/plugin-auth-api-reference.md)
+
 | 端点 | 说明 |
 |------|------|
 | `GET /v1/plugin/verify-token` | 验证 JWT，返回用户信息和角色 |
@@ -510,15 +518,15 @@ protected function resolveUserWithPermission($action): array
 ### 8.1 双实例模式
 
 ```typescript
-// 插件专属业务 API
+// 插件专属业务 API（指向主后端 /api/v1/plugin-user）
 const userApi = axios.create({
-  baseURL: '/v1/plugin-user',  // 替换为你的插件路径
+  baseURL: '/api/v1/plugin-user',
   timeout: 10000
 })
 
-// 通用插件 API（verify-token、allowed-actions 等）
+// 通用插件 API（verify-token、allowed-actions 等，指向主后端 /api/v1/plugin）
 const pluginApi = axios.create({
-  baseURL: '/v1/plugin',
+  baseURL: '/api/v1/plugin',
   timeout: 10000
 })
 ```
@@ -656,13 +664,14 @@ const i18n = createI18n({
 - [ ] 创建 `plugins/{plugin-name}/` 目录
 - [ ] 前端：Vue 3 + Element Plus + vue-router + vue-i18n + pinia
 - [ ] 实现 `src/utils/token.ts`（复制 user-management 的即可）
+- [ ] 实现 `src/composables/usePluginMessageBridge.ts`（复制即可，见第 15 节）
 - [ ] 实现 `src/composables/useTheme.ts`（复制即可）
 - [ ] 实现 `src/composables/usePermissions.ts`（修改 Permissions 接口和 plugin_name）
 - [ ] 实现 `src/api/index.ts`（双实例 + 拦截器，修改 baseURL）
 - [ ] 实现 `src/i18n/index.ts`（从 URL 读取语言）
-- [ ] App.vue 入口守卫（区分公开/认证路由）
-- [ ] Router beforeEach 守卫（检查 iframe + token）
-- [ ] 创建 `nginx.conf.template`（修改代理路径前缀）
+- [ ] App.vue 入口守卫（使用 usePluginMessageBridge 处理 INIT/TOKEN_UPDATE/DESTROY）
+- [ ] Router beforeEach 守卫（公开路由放行）
+- [ ] 创建 `nginx.conf.template`（配置 `/api/` 代理路径）
 - [ ] 创建 `Dockerfile`（多阶段构建）
 - [ ] 创建 `docker-entrypoint.sh`
 - [ ] 在 `web/public/config/plugins.json` 中注册插件
@@ -681,23 +690,62 @@ plugins/user-management/
 ├── vite.config.ts
 ├── src/
 │   ├── main.ts                    # 入口
-│   ├── App.vue                    # 根组件（入口守卫）
+│   ├── App.vue                    # 根组件（入口守卫，使用 usePluginMessageBridge）
 │   ├── api/
 │   │   └── index.ts               # axios 双实例 + 拦截器
 │   ├── composables/
 │   │   ├── usePermissions.ts      # 权限查询
+│   │   ├── usePluginMessageBridge.ts  # iframe ↔ 主系统通信桥（见第 15 节）
 │   │   └── useTheme.ts            # 主题同步
 │   ├── i18n/
 │   │   ├── index.ts               # i18n 初始化
-│   │   └── locales/               # 语言包
+│   │   └── locales/               # 语言包（zh-CN、zh-TW、en-US、ja-JP、th-TH）
 │   ├── layout/
-│   │   └── AppLayout.vue          # 插件内部布局
+│   │   └── AppLayout.vue          # 插件内部布局（抽屉式侧边栏）
 │   ├── router/
-│   │   └── index.ts               # 路由 + beforeEach 守卫
+│   │   └── index.ts               # 路由定义（/register、/api-diagnostics 为公开路由）
 │   ├── styles/
 │   │   └── index.css              # 主题 CSS 变量
 │   ├── utils/
-│   │   └── token.ts               # Token 管理 + postMessage 监听
+│   │   └── token.ts               # Token 存取 + requestParentTokenRefresh
 │   └── views/                     # 页面组件
+│       ├── UserList.vue           # 用户列表
+│       ├── UserForm.vue           # 创建/编辑用户
+│       ├── BatchCreateForm.vue    # 批量创建用户
+│       ├── InvitationList.vue     # 邀请码管理
+│       ├── Register.vue           # 邀请注册（公开路由）
+│       ├── ApiDiagnostics.vue     # API 诊断（公开路由）
+│       └── NotAllowed.vue         # 无权限提示
 └── docs/
 ```
+
+## 15. usePluginMessageBridge：与 plugin-template-sample 的关系
+
+### 15.1 两个文件的现状
+
+`usePluginMessageBridge.ts` 以**文件复制**方式存在于两个仓库：
+
+| 文件 | 路径 |
+|------|------|
+| 原始实现 | `plugins/user-management/src/composables/usePluginMessageBridge.ts` |
+| 模板副本 | `plugins/plugin-template-sample/frontend/src/composables/usePluginMessageBridge.ts` |
+
+目前两个文件**内容完全相同**，均实现了统一的 iframe ↔ 主系统通信桥：
+
+- 管理 `isReady`、`token`、`config` 响应式状态
+- 内置处理 `INIT`、`TOKEN_UPDATE`、`DESTROY` 协议消息
+- 提供 `postMessage`、`postResponse`、`onMessage` 三个对外接口
+- `onMounted` 时自动注册监听并发送 `PLUGIN_READY`
+- `onBeforeUnmount` 时自动清理监听器
+
+### 15.2 差异原因
+
+**user-management 是原始实现**。在插件系统早期，通信逻辑分散在 `token.ts`（`listenForParentToken`）和各组件中。随着插件数量增加，将通信逻辑统一封装为 `usePluginMessageBridge` composable，并在 `App.vue` 中通过回调处理 token 存储和主题初始化。
+
+**plugin-template-sample 是从中提炼的通用版本**。模板创建时直接复制了 user-management 中已稳定的实现，作为新插件的起点。两者保持同步，没有功能差异。
+
+### 15.3 未来计划
+
+考虑将 `usePluginMessageBridge` 发布为独立 npm 包，供所有插件通过依赖安装，避免多处维护同一份代码。在此之前，修改通信协议时需同步更新两个仓库中的文件。
+
+> 参见 `.kiro/steering/project-config.md`：「`usePluginMessageBridge` 以文件复制方式存在于 `plugin-template-sample` 和 `user-management`，未来考虑 npm 包化」

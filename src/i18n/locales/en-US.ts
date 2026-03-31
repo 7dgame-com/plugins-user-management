@@ -180,5 +180,6 @@ export default {
   layout: {
     waitingAuth: 'Waiting for authorization...',
     requireMainSystem: 'Please open this plugin from the main system',
+    noToken: 'Unable to open. Please log in from the main system and try again.',
   },
 }

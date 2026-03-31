@@ -12,22 +12,14 @@ server {
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
 
-    location /v1/plugin-user/ {
+    location /api/ {
         set $api_upstream ${API_UPSTREAM};
-        proxy_pass $api_upstream/v1/plugin-user/;
+        proxy_pass $api_upstream/;
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_ssl_server_name on;
-    }
-
-    location /v1/plugin/ {
-        set $api_upstream ${API_UPSTREAM};
-        proxy_pass $api_upstream/v1/plugin/;
-        proxy_set_header Host $proxy_host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_ssl_server_name on;
+        add_header X-Upstream-Addr $upstream_addr always;
     }
 
     location /health {
