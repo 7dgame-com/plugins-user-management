@@ -5,25 +5,16 @@
 前端插件和 nginx 反向代理均已正常工作：
 
 - Docker 镜像已构建并部署：`hkccr.ccs.tencentyun.com/plugins/user-manager:develop`
-- nginx 反向代理已配置，`/v1/plugin/` 和 `/v1/plugin-user/` 请求正确转发到 `https://api.d.xrteeth.com`
-- 请求确实到达了后端，但后端返回 `{"statusCode":404}`
+- nginx 将 `/api/*` 请求反向代理到 `API_UPSTREAM`（即 `https://api.d.xrteeth.com`），路径映射如下：
+  - 前端请求 `/api/v1/plugin/verify-token` → 后端 `https://api.d.xrteeth.com/v1/plugin/verify-token`
+  - 前端请求 `/api/v1/plugin-user/users` → 后端 `https://api.d.xrteeth.com/v1/plugin-user/users`
 
 ## 问题
 
-后端插件注册表中，`user-management` 插件的 `allowedOrigin` 只有生产地址，develop 域名未注册，导致来自 `user-manager.d.plugins.xrugc.com` 的请求被拒绝。
+后端插件注册表中，`user-management` 插件的 `allowedOrigin` 只有生产地址，develop 域名未注册，导致来自 `user-manager.d.plugins.xrugc.com` 的请求被拒绝返回 404。
 
-验证：
-```bash
-# 直接请求后端 → 401（接口存在，只是没带 token）
-curl https://api.d.xrteeth.com/v1/plugin/verify-token
-→ {"name":"Unauthorized",...}
+当前注册表中的记录（从 `GET /v1/plugin/list` 查到）：
 
-# 通过 nginx 代理请求 → 404（后端拒绝，域名未注册）
-curl https://user-manager.d.plugins.xrugc.com/v1/plugin/verify-token
-→ {"statusCode":404}
-```
-
-当前注册表中的记录（从 `/v1/plugin/list` 查到）：
 ```json
 {
   "id": "user-management",
@@ -34,7 +25,7 @@ curl https://user-manager.d.plugins.xrugc.com/v1/plugin/verify-token
 
 ## 需要操作
 
-在 `api.d.xrteeth.com` 的插件注册表中，将 `user-management` 插件新增或更新 develop 环境的域名：
+在 `api.d.xrteeth.com` 的插件注册表中，为 `user-management` 插件新增 develop 环境记录：
 
 ```json
 {
