@@ -4,40 +4,26 @@
   <template v-else>
     <router-view v-if="hasToken" />
 
-    <!-- 握手状态模态窗（半透明遮罩） -->
+    <!-- 握手状态 -->
     <Transition name="handshake-fade">
-      <div v-if="showHandshake" class="handshake-overlay">
+      <!-- 非 iframe：警告模态窗 -->
+      <div v-if="showHandshake && !inIframe" key="warning" class="handshake-overlay">
         <div class="handshake-card">
-          <!-- 非 iframe 警告 -->
-          <template v-if="!inIframe">
-            <div class="handshake-icon warn">⚠️</div>
-            <h3 class="handshake-title">未在 iframe 中运行</h3>
-            <p class="handshake-desc">此插件需要嵌入主系统中使用，直接访问无法完成握手授权。</p>
-            <div class="handshake-steps">
-              <div class="step done">✅ 页面加载完成</div>
-              <div class="step done">✅ 发送 PLUGIN_READY</div>
-              <div class="step warn">⚠️ 等待 INIT — 无父窗口，永不到达</div>
-            </div>
-            <a href="/api-diagnostics" class="diag-link">前往 API 诊断页面 →</a>
-          </template>
-
-          <!-- iframe 内握手进度 -->
-          <template v-else>
-            <div class="handshake-icon spin">⚙️</div>
-            <h3 class="handshake-title">正在与主系统握手…</h3>
-            <p class="handshake-desc">插件需要从主系统获取授权 token 后才能显示内容。</p>
-            <div class="handshake-steps">
-              <div class="step done">✅ 页面加载完成</div>
-              <div class="step done">✅ 发送 PLUGIN_READY</div>
-              <div class="step" :class="isReady ? 'done' : 'waiting'">
-                {{ isReady ? '✅' : '⏳' }} 等待主系统回复 INIT
-              </div>
-              <div class="step" :class="hasToken ? 'done' : 'waiting'">
-                {{ hasToken ? '✅' : '⏳' }} 获取 JWT Token
-              </div>
-            </div>
-          </template>
+          <div class="handshake-icon warn">⚠️</div>
+          <h3 class="handshake-title">未在 iframe 中运行</h3>
+          <p class="handshake-desc">此插件需要嵌入主系统中使用，直接访问无法完成握手授权。</p>
+          <div class="handshake-steps">
+            <div class="step done">✅ 页面加载完成</div>
+            <div class="step done">✅ 发送 PLUGIN_READY</div>
+            <div class="step warn">⚠️ 等待 INIT — 无父窗口，永不到达</div>
+          </div>
+          <a href="/api-diagnostics" class="diag-link">前往 API 诊断页面 →</a>
         </div>
+      </div>
+      <!-- iframe 内：简单 loading -->
+      <div v-else-if="showHandshake && inIframe" key="loading" class="handshake-inline">
+        <div class="handshake-spinner spin">⚙️</div>
+        <p class="handshake-text">正在与主系统握手…</p>
       </div>
     </Transition>
   </template>
@@ -61,7 +47,7 @@ const { t } = useI18n()
 
 const route = useRoute()
 const hasToken = ref(!!getToken())
-const inIframe = ref(false)
+const inIframe = ref(isInIframe())
 
 // 公开路由不需要 token 认证
 const PUBLIC_ROUTES = ['/register', '/api-diagnostics']
@@ -182,6 +168,19 @@ onMounted(() => {
   text-decoration: none;
 }
 .diag-link:hover { text-decoration: underline; }
+
+.handshake-inline {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-page, #f5f7fa);
+}
+.handshake-spinner { font-size: 36px; display: inline-block; }
+.handshake-spinner.spin { animation: spin 2s linear infinite; }
+.handshake-text { margin-top: 12px; font-size: 14px; color: #909399; }
 
 /* 淡入淡出动画 */
 .handshake-fade-enter-active,
