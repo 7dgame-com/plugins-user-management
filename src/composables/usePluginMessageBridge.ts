@@ -110,7 +110,6 @@ export function usePluginMessageBridge(
   // ── Built-in handlers ───────────────────────────────────
 
   function handleInit(payload: Record<string, unknown>) {
-    console.log('[PluginMessageBridge:handshake] received INIT', { hasToken: !!payload.token, configKeys: Object.keys(payload.config || {}) })
     token.value = (payload.token as string) ?? null
     config.value = (payload.config as Record<string, unknown>) ?? {}
     isReady.value = true
@@ -141,8 +140,6 @@ export function usePluginMessageBridge(
 
       const msg = event.data as StandardMessage
       if (!msg || typeof msg.type !== 'string') return
-
-      console.log(`[PluginMessageBridge:handshake] received message type="${msg.type}"`, msg.payload ? { payloadKeys: Object.keys(msg.payload) } : '(no payload)')
 
       // Track REQUEST id for RESPONSE pairing
       if (msg.type === 'REQUEST') {
@@ -176,9 +173,11 @@ export function usePluginMessageBridge(
   // ── Lifecycle ───────────────────────────────────────────
 
   onMounted(() => {
-    console.log('[PluginMessageBridge:handshake] onMounted, registering listener and sending PLUGIN_READY, isInIframe=', window.parent !== window)
     window.addEventListener('message', handleMessage)
-    postMessage('PLUGIN_READY')
+    if (!(window as Record<string, unknown>).__PLUGIN_READY_SENT__) {
+      ;(window as Record<string, unknown>).__PLUGIN_READY_SENT__ = true
+      postMessage('PLUGIN_READY')
+    }
   })
 
   onBeforeUnmount(() => {
