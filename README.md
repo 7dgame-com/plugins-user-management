@@ -1,6 +1,6 @@
 # 用户管理插件
 
-用户管理工具插件，提供用户增删改查、批量创建用户、邀请码管理等功能。作为插件系统的参考实现，`plugin-template-sample` 模板从本插件中提炼了通用模式。
+用户管理工具插件，提供用户增删改查、批量创建用户、邀请码管理等功能。作为插件系统的参考实现，本插件沉淀了后续插件模板和接入规范中的通用模式。
 
 ## 功能
 
@@ -129,6 +129,6 @@ xrugc-user-management:
 |---|---|---|
 | teacher | user-management | list-users,view-user |
 
-## 与 plugin-template-sample 的关系
+## 作为参考实现
 
-本插件是插件系统的**原始参考实现**。`plugin-template-sample` 模板从本插件中提炼了通用模式（`usePluginMessageBridge`、`useTheme`、`usePermissions`、`token.ts` 等），供新插件开发时参照。
+本插件是插件系统的原始参考实现。后续插件模板和接入规范中的通用模式（如 `usePluginMessageBridge`、`useTheme`、`usePermissions`、`token.ts` 等）都可以回溯到这里。

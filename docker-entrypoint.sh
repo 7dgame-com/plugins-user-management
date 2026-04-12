@@ -12,11 +12,14 @@ set -e
 #   APP_API_2_WEIGHT=30
 #   APP_API_3_URL=https://api.third.com
 #   APP_API_3_WEIGHT=10
-#   APP_RESOLVER=8.8.8.8 223.5.5.5             （可选，DNS 解析服务器）
+#   APP_BACKEND_1_URL=http://system-admin-backend:8088
+#   APP_BACKEND_1_WEIGHT=100                  （可选）
+#   APP_RESOLVER=127.0.0.11 8.8.8.8           （可选，DNS 解析服务器）
 #
 # 生成负载均衡 + failover：
 #   split_clients 按权重分流 → map 映射后端 URL/Host
 #   /api/        → 加权分流到 APP_API_N → failover 到环形下一个
+#   /backend/    → 加权分流到 APP_BACKEND_N → failover 到环形下一个
 # ============================================================
 
 TEMPLATE="/etc/nginx/templates/default.conf.template"
@@ -88,20 +91,19 @@ generate_lb_config() {
   done
 
   # ==========================================================
-  # 单后端：退化为简单反向代理 + resolver 动态解析
+  # 单后端：退化为简单反向代理
   # ==========================================================
   if [ "$TOTAL" -eq 1 ]; then
     eval "url=\$LB_URL_1"
     eval "host=\$LB_HOST_1"
 
-    echo "[entrypoint] Mode: single backend (resolver-enabled)"
+    echo "[entrypoint] Mode: single backend (direct upstream)"
 
     CHAIN_RESULT="
-    # ============ 反向代理 - ${LOC_PATH} (单后端 + DNS 动态解析) ============
+    # ============ 反向代理 - ${LOC_PATH} (单后端直连) ============
     location ${LOC_PATH} {
-        set \$${PREFIX_NAME}_single_backend \"${url}\";
         rewrite ^${LOC_PATH}(.*)\$ /\$1 break;
-        proxy_pass \$${PREFIX_NAME}_single_backend;
+        proxy_pass ${url};
 
         # HTTPS 上游：启用 SNI
         proxy_ssl_server_name on;
@@ -288,13 +290,17 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
 generate_lb_config "APP_API" "/api/" "api"
 API_LOCATIONS="$CHAIN_RESULT"
 
-# --- 2. 生成 resolver 配置 ---
-RESOLVER_SERVERS="${APP_RESOLVER:-8.8.8.8 223.5.5.5}"
-RESOLVER_BLOCK="resolver ${RESOLVER_SERVERS} valid=30s ipv6=off;
-resolver_timeout 5s;"
-echo "[entrypoint] DNS resolver: ${RESOLVER_SERVERS} (valid=30s)"
+# --- 2. 生成 backend 负载均衡配置 ---
+generate_lb_config "APP_BACKEND" "/backend/" "backend"
+BACKEND_LOCATIONS="$CHAIN_RESULT"
 
-# --- 3. 复制模板并注入动态配置 ---
+# --- 3. 生成 resolver 配置 ---
+RESOLVER_SERVERS="${APP_RESOLVER:-127.0.0.11}"
+RESOLVER_BLOCK="resolver ${RESOLVER_SERVERS} valid=300s ipv6=off;
+resolver_timeout 10s;"
+echo "[entrypoint] DNS resolver: ${RESOLVER_SERVERS} (valid=300s)"
+
+# --- 4. 复制模板并注入动态配置 ---
 cp "$TEMPLATE" "$OUTPUT"
 
 inject_locations() {
@@ -322,10 +328,11 @@ inject_locations "# __LB_HTTP_BLOCK__" "$LB_HTTP_BLOCK"
 
 # 注入 server 层级配置（location 块）
 inject_locations "# __API_LOCATIONS__" "$API_LOCATIONS"
+inject_locations "# __BACKEND_LOCATIONS__" "$BACKEND_LOCATIONS"
 
 echo "[entrypoint] Nginx config generated at $OUTPUT"
 
-# --- 4. 生成调试信息 ---
+# --- 5. 生成调试信息 ---
 API_LIST=""
 i=1
 while true; do
@@ -335,13 +342,22 @@ while true; do
   API_LIST="${API_LIST}\"APP_API_${i}_URL\": \"${url}\""
   i=$((i + 1))
 done
+BACKEND_LIST=""
+i=1
+while true; do
+  eval "url=\${APP_BACKEND_${i}_URL}"
+  [ -z "$url" ] && break
+  [ -n "$BACKEND_LIST" ] && BACKEND_LIST="${BACKEND_LIST}, "
+  BACKEND_LIST="${BACKEND_LIST}\"APP_BACKEND_${i}_URL\": \"${url}\""
+  i=$((i + 1))
+done
 cat > /usr/share/nginx/html/debug-env.json <<EOF
 {
-  ${API_LIST},
+  ${API_LIST}${API_LIST:+, }${BACKEND_LIST},
   "buildTime": "$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')",
   "hostname": "$(hostname)"
 }
 EOF
 
-# --- 5. 启动 nginx ---
+# --- 6. 启动 nginx ---
 exec nginx -g 'daemon off;'

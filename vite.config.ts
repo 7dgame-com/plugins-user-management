@@ -94,6 +94,11 @@ export default defineConfig({
   server: {
     port: 3003,
     proxy: {
+      '/backend': {
+        target: 'http://localhost:8088',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/backend/, '')
+      },
       '/api': {
         target: 'http://localhost:8081',
         changeOrigin: true,

@@ -19,10 +19,10 @@ const userApi = axios.create({
 })
 
 /**
- * 通用插件接口（指向主后端 /api/v1/plugin，如 verify-token、allowed-actions）
+ * 通用插件接口（指向 system-admin 后端 /backend/api/v1/plugin）
  */
 const pluginApi = axios.create({
-  baseURL: '/api/v1/plugin',
+  baseURL: '/backend/api/v1/plugin',
   timeout: 10000
 })
 

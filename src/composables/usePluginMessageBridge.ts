@@ -2,6 +2,12 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 // ── Types ───────────────────────────────────────────────────
 
+declare global {
+  interface Window {
+    __PLUGIN_READY_SENT__?: boolean
+  }
+}
+
 /** Standard message envelope for iframe ↔ host communication. */
 export interface StandardMessage {
   type: string
@@ -174,8 +180,8 @@ export function usePluginMessageBridge(
 
   onMounted(() => {
     window.addEventListener('message', handleMessage)
-    if (!(window as Record<string, unknown>).__PLUGIN_READY_SENT__) {
-      ;(window as Record<string, unknown>).__PLUGIN_READY_SENT__ = true
+    if (!window.__PLUGIN_READY_SENT__) {
+      window.__PLUGIN_READY_SENT__ = true
       postMessage('PLUGIN_READY')
     }
   })
