@@ -71,8 +71,10 @@ describe('AppLayout', () => {
   it('keeps the sidebar visible on desktop layouts', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/layout/AppLayout.vue'), 'utf8')
 
+    expect(source).toContain(":class=\"{ 'with-sidebar': hasAny() }\"")
     expect(source).toContain('@media (min-width: 1024px)')
     expect(source).toContain('transform: none;')
+    expect(source).toContain('.main-area.with-sidebar')
     expect(source).toContain('margin-left: 260px;')
   })
 })

@@ -70,7 +70,7 @@
     </aside>
 
     <!-- 主内容区 -->
-    <div class="main-area">
+    <div class="main-area" :class="{ 'with-sidebar': hasAny() }">
       <header class="navbar">
         <button v-if="hasAny()" class="menu-btn" @click="sidebarOpen = true">
           <el-icon :size="20"><Fold /></el-icon>
@@ -299,7 +299,7 @@ onMounted(async () => {
     display: none;
   }
 
-  .main-area {
+  .main-area.with-sidebar {
     margin-left: 260px;
   }
 }

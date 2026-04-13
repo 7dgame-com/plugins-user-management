@@ -1,5 +1,5 @@
 import { ref, readonly } from 'vue'
-import api, { pluginApi } from '../api'
+import { pluginApi } from '../api'
 
 export interface Permissions {
   'list-users': boolean
@@ -26,6 +26,24 @@ const permissions = ref<Permissions>({
 const loaded = ref(false)
 const loading = ref(false)
 
+const ALL_ACTIONS: (keyof Permissions)[] = [
+  'list-users',
+  'view-user',
+  'create-user',
+  'update-user',
+  'delete-user',
+  'change-role',
+  'manage-invitations',
+  'manage-organizations',
+]
+
+function applyAllowedActions(allowedActions: string[]) {
+  const hasWildcard = allowedActions.includes('*')
+  ALL_ACTIONS.forEach((action) => {
+    permissions.value[action] = hasWildcard || allowedActions.includes(action)
+  })
+}
+
 export function usePermissions() {
   async function fetchPermissions() {
     if (loaded.value || loading.value) return
@@ -35,20 +53,18 @@ export function usePermissions() {
         params: { plugin_name: 'user-management' }
       })
       if (data.code === 0) {
-        const allowedActions: string[] = data.data?.actions || []
-        const allActions: (keyof Permissions)[] = [
-          'list-users', 'view-user', 'create-user', 'update-user',
-          'delete-user', 'change-role', 'manage-invitations', 'manage-organizations'
-        ]
-        const hasWildcard = allowedActions.includes('*')
-        allActions.forEach((a) => {
-          permissions.value[a] = hasWildcard || allowedActions.includes(a)
-        })
+        applyAllowedActions(data.data?.actions || [])
       }
-      loaded.value = true
-    } catch {
-      // 权限获取失败时保持默认（全部 false）
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+
+      // 与宿主插件系统保持一致：权限 API 不存在时默认开放，避免开发环境卡死。
+      if (status === 404) {
+        applyAllowedActions(['*'])
+      }
+      // 其他错误保留默认（全部 false），由 UI 展示无权限态。
     } finally {
+      loaded.value = true
       loading.value = false
     }
   }
