@@ -42,8 +42,8 @@
           <code>{{ envInfo.isIframe ? '是' : '否' }}</code>
         </div>
         <div class="info-item">
-          <span class="label">API_UPSTREAM (Nginx 代理目标)</span>
-          <code :class="envInfo.apiUpstream === '加载中...' ? '' : envInfo.apiUpstream.startsWith('http') ? 'ok' : 'warn'">{{ envInfo.apiUpstream }}</code>
+          <span class="label">Nginx 上游配置</span>
+          <code :class="envInfo.upstreams === '加载中...' ? '' : envInfo.upstreams.startsWith('http') ? 'ok' : 'warn'">{{ envInfo.upstreams }}</code>
         </div>
         <div class="info-item">
           <span class="label">容器 hostname</span>
@@ -247,10 +247,10 @@ const envInfo = reactive({
   location: window.location.href,
   origin: window.location.origin,
   userApiBase: api.defaults.baseURL || '/api/v1/plugin-user',
-  pluginApiBase: pluginApi.defaults.baseURL || '/backend/api/v1/plugin',
+  pluginApiBase: pluginApi.defaults.baseURL || '/api-config/v1/plugin',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
-  apiUpstream: '加载中...',
+  upstreams: '加载中...',
   hostname: '',
   serverBuildTime: '',
 })
@@ -272,7 +272,7 @@ interface TestItem {
 }
 
 function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi', path: string, params?: Record<string, any>): TestItem {
-  const base = instance === 'userApi' ? (api.defaults.baseURL || '/api/v1/plugin-user') : (pluginApi.defaults.baseURL || '/backend/api/v1/plugin')
+  const base = instance === 'userApi' ? (api.defaults.baseURL || '/api/v1/plugin-user') : (pluginApi.defaults.baseURL || '/api-config/v1/plugin')
   const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
   return {
     name, method, instance, path, params,
@@ -346,8 +346,8 @@ interface RawTestItem {
 
 const rawTests = ref<RawTestItem[]>([
   { name: 'userApi /users', url: '/api/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /verify-token', url: '/backend/api/v1/plugin/verify-token?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /allowed-actions', url: '/backend/api/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'pluginApi /verify-token', url: '/api-config/v1/plugin/verify-token?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'pluginApi /allowed-actions', url: '/api-config/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Health Check', url: '/health', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Debug Env', url: '/debug-env', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
 ])
@@ -438,7 +438,7 @@ function makeProxyTest(name: string, url: string, expectedBackend: string): Prox
 
 const proxyTests = ref<ProxyTestItem[]>([
   makeProxyTest('/api/ → 后端 API', '/api/v1/plugin-user/users?page=1&pageSize=1', 'proxy_pass → API 后端'),
-  makeProxyTest('/backend/ → plugin 接口', '/backend/api/v1/plugin/allowed-actions?plugin_name=user-management', 'proxy_pass → system-admin 后端'),
+  makeProxyTest('/api-config/ → 配置接口', '/api-config/v1/plugin/allowed-actions?plugin_name=user-management', 'proxy_pass → system-admin 配置后端'),
   makeProxyTest('/health → 健康检查', '/health', '本地 Nginx 直接返回'),
   makeProxyTest('/debug-env → 调试环境', '/debug-env', '本地 Nginx 静态文件'),
   makeProxyTest('/ → 前端静态文件', '/', '本地 Nginx try_files'),
@@ -528,18 +528,18 @@ onMounted(async () => {
     const resp = await fetch('/debug-env')
     const text = await resp.text()
     if (!resp.ok) {
-      envInfo.apiUpstream = `请求失败 (${resp.status})`
+      envInfo.upstreams = `请求失败 (${resp.status})`
     } else {
       let data: Record<string, string> = {}
       try {
         data = JSON.parse(text)
       } catch {
-        envInfo.apiUpstream = `/debug-env 返回了非 JSON 内容（可能未配置该 location）`
+        envInfo.upstreams = `/debug-env 返回了非 JSON 内容（可能未配置该 location）`
         return
       }
       const upstreams: string[] = []
       const apiUrls: string[] = []
-      const backendUrls: string[] = []
+      const configUrls: string[] = []
       let i = 1
       while (data[`APP_API_${i}_URL`]) {
         apiUrls.push(data[`APP_API_${i}_URL`])
@@ -547,9 +547,9 @@ onMounted(async () => {
         i++
       }
       i = 1
-      while (data[`APP_BACKEND_${i}_URL`]) {
-        backendUrls.push(data[`APP_BACKEND_${i}_URL`])
-        upstreams.push(`APP_BACKEND_${i}_URL=${data[`APP_BACKEND_${i}_URL`]}`)
+      while (data[`APP_CONFIG_${i}_URL`]) {
+        configUrls.push(data[`APP_CONFIG_${i}_URL`])
+        upstreams.push(`APP_CONFIG_${i}_URL=${data[`APP_CONFIG_${i}_URL`]}`)
         i++
       }
       // 兜底：无序号变量
@@ -557,14 +557,14 @@ onMounted(async () => {
         apiUrls.push(data.API_UPSTREAM)
         upstreams.push(`API_UPSTREAM=${data.API_UPSTREAM}`)
       }
-      envInfo.apiUpstream = upstreams.length ? upstreams.join(' | ') : '未设置'
+      envInfo.upstreams = upstreams.length ? upstreams.join(' | ') : '未设置'
       envInfo.hostname = data.hostname || ''
       envInfo.serverBuildTime = data.buildTime || ''
 
       proxyTests.value.forEach(t => {
-        const targetUrls = t.url.startsWith('/backend/') ? backendUrls : apiUrls
-        const matcher = t.url.startsWith('/backend/') ? /^\/backend/ : /^\/api/
-        if (!targetUrls.length || (!t.url.startsWith('/api/') && !t.url.startsWith('/backend/'))) return
+        const targetUrls = t.url.startsWith('/api-config/') ? configUrls : apiUrls
+        const matcher = t.url.startsWith('/api-config/') ? /^\/api-config/ : /^\/api/
+        if (!targetUrls.length || (!t.url.startsWith('/api/') && !t.url.startsWith('/api-config/'))) return
         const backendPath = t.url.replace(matcher, '')
         t.expectedBackend = targetUrls.length === 1
           ? targetUrls[0].replace(/\/$/, '') + backendPath
@@ -572,7 +572,7 @@ onMounted(async () => {
       })
     }
   } catch (e: any) {
-    envInfo.apiUpstream = `请求异常: ${e.message}`
+    envInfo.upstreams = `请求异常: ${e.message}`
   }
 })
 </script>

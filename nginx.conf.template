@@ -14,7 +14,7 @@ server {
 
     # __API_LOCATIONS__
 
-    # __BACKEND_LOCATIONS__
+    # __CONFIG_LOCATIONS__
 
     location /health {
         access_log off;

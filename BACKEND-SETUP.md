@@ -5,9 +5,9 @@
 前端插件和 nginx 反向代理均已正常工作：
 
 - Docker 镜像已构建并部署：`hkccr.ccs.tencentyun.com/plugins/user-manager:develop`
-- nginx 将 `/api/*` 请求反向代理到 `API_UPSTREAM`（即 `https://api.d.xrteeth.com`），路径映射如下：
-  - 前端请求 `/api/v1/plugin/verify-token` → 后端 `https://api.d.xrteeth.com/v1/plugin/verify-token`
-  - 前端请求 `/api/v1/plugin-user/users` → 后端 `https://api.d.xrteeth.com/v1/plugin-user/users`
+- nginx 现按前缀拆分上游：
+  - 前端请求 `/api-config/v1/plugin/verify-token` → `APP_CONFIG_N_URL + /v1/plugin/verify-token`
+  - 前端请求 `/api/v1/plugin-user/users` → `APP_API_N_URL + /v1/plugin-user/users`
 
 ## 问题
 

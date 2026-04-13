@@ -32,7 +32,8 @@
 │  插件 (独立 Web 应用，任意框架)                                │
 │                                                              │
 │  nginx 反向代理                                               │
-│  ├─ /api/ → 主后端 API（${API_UPSTREAM}）                     │
+│  ├─ /api/ → 主后端 API（${APP_API_N_URL}）                    │
+│  ├─ /api-config/ → system-admin 后端（${APP_CONFIG_N_URL}）   │
 │  └─ /     → SPA 静态文件                                      │
 │                                                              │
 │  前端                                                         │
@@ -299,7 +300,7 @@ router.beforeEach((to) => {
 
 ### 5.1 nginx.conf.template
 
-插件使用 nginx 模板文件，通过环境变量 `API_UPSTREAM` 动态配置后端地址。所有 `/api/` 请求统一代理到主后端：
+插件通过 `docker-entrypoint.sh` 基于 `APP_API_N_URL` 和 `APP_CONFIG_N_URL` 动态生成 nginx 反向代理配置。业务 API 走 `/api/`，通用插件接口走 `/api-config/`：
 
 ```nginx
 server {
@@ -315,15 +316,17 @@ server {
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
 
-    # 所有业务 API 统一代理到主后端
+    # 业务 API 代理到主后端
     location /api/ {
-        set $api_upstream ${API_UPSTREAM};
-        proxy_pass $api_upstream/;
-        proxy_set_header Host $proxy_host;
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $api_backend_url;
+        proxy_set_header Host $api_backend_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_ssl_server_name on;
     }
+
+    # __CONFIG_LOCATIONS__
 
     # 健康检查
     location /health {
@@ -343,10 +346,11 @@ server {
 
 | 前端请求路径 | 代理目标 | 说明 |
 |-------------|---------|------|
-| `/api/*` | `${API_UPSTREAM}/*` | 所有 API 请求（含 `/api/v1/plugin-user/` 和 `/api/v1/plugin/`） |
+| `/api/*` | `${APP_API_N_URL}/*` | 业务 API 与认证刷新请求（如 `/api/v1/plugin-user/*`、`/api/auth/refresh`） |
+| `/api-config/*` | `${APP_CONFIG_N_URL}/*` | 通用插件接口（如 `/api-config/v1/plugin/*`） |
 | `/*` | 本地静态文件 | SPA 页面 |
 
-> 注意：user-management 使用单一 `/api/` 前缀统一代理，与文档中描述的分路径代理模式不同。新插件可根据需要选择单一前缀或分路径代理。
+> 注意：当前 user-management 已采用分路径代理模式：`/api/` 指向主后端，`/api-config/` 指向 system-admin 后端。
 
 ### 5.3 开发环境代理（vite.config.ts）
 
@@ -359,6 +363,11 @@ export default defineConfig({
         target: 'http://localhost:8081',  // 主后端 API
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      '/api-config': {
+        target: 'http://localhost:8088',  // system-admin 后端
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-config/, '')
       }
     }
   }
@@ -387,8 +396,7 @@ RUN chmod +x /docker-entrypoint-custom.sh
 RUN echo "{\"status\":\"ok\",\"buildTime\":\"$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')\"}" \
     > /usr/share/nginx/html/health.json
 
-ENV API_UPSTREAM=http://localhost
-ENV NGINX_ENVSUBST_FILTER=API_UPSTREAM
+# 运行时由 docker-entrypoint.sh 读取 APP_API_N_URL / APP_CONFIG_N_URL
 EXPOSE 80
 ENTRYPOINT ["/docker-entrypoint-custom.sh"]
 ```
@@ -400,22 +408,24 @@ ENTRYPOINT ["/docker-entrypoint-custom.sh"]
 # 生成调试信息
 cat > /usr/share/nginx/html/debug-env.json <<EOF
 {
-  "API_UPSTREAM": "${API_UPSTREAM}",
+  "APP_API_1_URL": "${APP_API_1_URL}",
+  "APP_CONFIG_1_URL": "${APP_CONFIG_1_URL}",
   "buildTime": "$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')",
   "hostname": "$(hostname)"
 }
 EOF
 
-# 调用 nginx 官方 entrypoint（处理 templates 中的环境变量替换）
-exec /docker-entrypoint.sh nginx -g 'daemon off;'
+# 生成 /api 和 /api-config 的 nginx 反向代理配置后启动 nginx
+exec nginx -g 'daemon off;'
 ```
 
 ### 6.3 关键环境变量
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `API_UPSTREAM` | 主后端 API 地址 | `http://xrugc-api:80`（Docker 内部）或 `https://api.xrugc.com`（生产） |
-| `NGINX_ENVSUBST_FILTER` | nginx 模板变量过滤 | `API_UPSTREAM` |
+| `APP_API_1_URL` | 主后端 API 地址 | `http://xrugc-api:80`（Docker 内部）或 `https://api.xrugc.com`（生产） |
+| `APP_CONFIG_1_URL` | system-admin 后端地址 | `http://system-admin-backend:8088` |
+| `APP_RESOLVER` | 运行时 DNS 解析服务器 | `127.0.0.11 8.8.8.8` |
 
 ### 6.4 docker-compose 服务定义示例
 
@@ -426,11 +436,13 @@ xrugc-user-management:
   ports:
     - "3003:80"
   environment:
-    - API_UPSTREAM=http://xrugc-api:80
+    - APP_API_1_URL=http://xrugc-api:80
+    - APP_CONFIG_1_URL=http://system-admin-backend:8088
   networks:
     - xrugc-network
   depends_on:
     - xrugc-api
+    - system-admin-backend
 ```
 
 ## 7. 权限系统
@@ -524,9 +536,9 @@ const userApi = axios.create({
   timeout: 10000
 })
 
-// 通用插件 API（verify-token、allowed-actions 等，指向主后端 /api/v1/plugin）
+// 通用插件 API（verify-token、allowed-actions 等，指向 system-admin 后端 /api-config/v1/plugin）
 const pluginApi = axios.create({
-  baseURL: '/api/v1/plugin',
+  baseURL: '/api-config/v1/plugin',
   timeout: 10000
 })
 ```

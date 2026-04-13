@@ -12,14 +12,14 @@ set -e
 #   APP_API_2_WEIGHT=30
 #   APP_API_3_URL=https://api.third.com
 #   APP_API_3_WEIGHT=10
-#   APP_BACKEND_1_URL=http://system-admin-backend:8088
-#   APP_BACKEND_1_WEIGHT=100                  （可选）
+#   APP_CONFIG_1_URL=http://system-admin-backend:8088
+#   APP_CONFIG_1_WEIGHT=100                   （可选）
 #   APP_RESOLVER=127.0.0.11 8.8.8.8           （可选，DNS 解析服务器）
 #
 # 生成负载均衡 + failover：
 #   split_clients 按权重分流 → map 映射后端 URL/Host
 #   /api/        → 加权分流到 APP_API_N → failover 到环形下一个
-#   /backend/    → 加权分流到 APP_BACKEND_N → failover 到环形下一个
+#   /api-config/ → 加权分流到 APP_CONFIG_N → failover 到环形下一个
 # ============================================================
 
 TEMPLATE="/etc/nginx/templates/default.conf.template"
@@ -290,9 +290,9 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
 generate_lb_config "APP_API" "/api/" "api"
 API_LOCATIONS="$CHAIN_RESULT"
 
-# --- 2. 生成 backend 负载均衡配置 ---
-generate_lb_config "APP_BACKEND" "/backend/" "backend"
-BACKEND_LOCATIONS="$CHAIN_RESULT"
+# --- 2. 生成 config 负载均衡配置 ---
+generate_lb_config "APP_CONFIG" "/api-config/" "config"
+CONFIG_LOCATIONS="$CHAIN_RESULT"
 
 # --- 3. 生成 resolver 配置 ---
 RESOLVER_SERVERS="${APP_RESOLVER:-127.0.0.11}"
@@ -328,7 +328,7 @@ inject_locations "# __LB_HTTP_BLOCK__" "$LB_HTTP_BLOCK"
 
 # 注入 server 层级配置（location 块）
 inject_locations "# __API_LOCATIONS__" "$API_LOCATIONS"
-inject_locations "# __BACKEND_LOCATIONS__" "$BACKEND_LOCATIONS"
+inject_locations "# __CONFIG_LOCATIONS__" "$CONFIG_LOCATIONS"
 
 echo "[entrypoint] Nginx config generated at $OUTPUT"
 
@@ -342,18 +342,18 @@ while true; do
   API_LIST="${API_LIST}\"APP_API_${i}_URL\": \"${url}\""
   i=$((i + 1))
 done
-BACKEND_LIST=""
+CONFIG_LIST=""
 i=1
 while true; do
-  eval "url=\${APP_BACKEND_${i}_URL}"
+  eval "url=\${APP_CONFIG_${i}_URL}"
   [ -z "$url" ] && break
-  [ -n "$BACKEND_LIST" ] && BACKEND_LIST="${BACKEND_LIST}, "
-  BACKEND_LIST="${BACKEND_LIST}\"APP_BACKEND_${i}_URL\": \"${url}\""
+  [ -n "$CONFIG_LIST" ] && CONFIG_LIST="${CONFIG_LIST}, "
+  CONFIG_LIST="${CONFIG_LIST}\"APP_CONFIG_${i}_URL\": \"${url}\""
   i=$((i + 1))
 done
 cat > /usr/share/nginx/html/debug-env.json <<EOF
 {
-  ${API_LIST}${API_LIST:+, }${BACKEND_LIST},
+  ${API_LIST}${API_LIST:+, }${CONFIG_LIST},
   "buildTime": "$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')",
   "hostname": "$(hostname)"
 }

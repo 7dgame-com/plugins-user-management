@@ -200,7 +200,7 @@ to.meta.public?
 const userApi = axios.create({ baseURL: '/api/v1/plugin-user', timeout: 10000 })
 
 // 通用插件 API（verify-token、allowed-actions 等）
-const pluginApi = axios.create({ baseURL: '/api/v1/plugin', timeout: 10000 })
+const pluginApi = axios.create({ baseURL: '/api-config/v1/plugin', timeout: 10000 })
 ```
 
 ### 6.2 请求拦截器
@@ -242,7 +242,7 @@ const loading = ref(false)
 export function usePermissions() {
   async function fetchPermissions() {
     if (loaded.value || loading.value) return  // 防重复
-    // GET /api/v1/plugin/allowed-actions?plugin_name=user-management
+    // GET /api-config/v1/plugin/allowed-actions?plugin_name=user-management
     // 支持通配符 '*'（全部权限）
   }
   function can(action): boolean { return permissions.value[action] }
@@ -480,7 +480,7 @@ xrugc-user-management:
 - [ ] 复制 `usePluginMessageBridge.ts`（无需修改）
 - [ ] 复制 `useTheme.ts`（无需修改）
 - [ ] 复制 `usePermissions.ts`，修改 `Permissions` 接口和 `plugin_name`
-- [ ] 复制 `api/index.ts`，修改 `baseURL`（`/api/v1/plugin-{name}`）
+- [ ] 复制 `api/index.ts`，修改业务 API 的 `baseURL`（`/api/v1/plugin-{name}`），保留通用插件 API 为 `/api-config/v1/plugin`
 - [ ] 复制 `i18n/index.ts`，按需调整语言包，加入 `LANG_CHANGE` 消息监听实现运行时切换
 - [ ] `App.vue`：使用 `usePluginMessageBridge` 处理 INIT/TOKEN_UPDATE/DESTROY
 - [ ] `router/index.ts`：公开路由加 `meta.public: true`，权限路由加 `meta.requiresPermission`
@@ -645,7 +645,7 @@ const userInfo = ref<{ id: number; username: string; nickname: string; roles: st
 onMounted(async () => {
   const [{ data }] = await Promise.all([
     api.get('/me'),          // GET /api/v1/plugin-user/me
-    fetchPermissions(),      // GET /api/v1/plugin/allowed-actions
+    fetchPermissions(),      // GET /api-config/v1/plugin/allowed-actions
   ])
   userInfo.value = data
 })
