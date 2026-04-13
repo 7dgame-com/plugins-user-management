@@ -137,6 +137,22 @@ export default {
       inviteCodeRequired: '請輸入邀請碼',
     },
   },
+  organization: {
+    title: '組織管理',
+    addTitle: '新增組織',
+    editTitle: '編輯組織',
+    organizationTitle: '組織名稱',
+    organizationName: '組織標識',
+    userOrganizations: '所屬組織',
+    organizationTitlePlaceholder: '請輸入組織名稱',
+    organizationNamePlaceholder: '請輸入組織標識',
+    messages: {
+      loadFailed: '取得組織清單失敗',
+      titleRequired: '請輸入組織名稱',
+      nameRequired: '請輸入組織標識',
+      selectorLoadFailed: '組織清單載入失敗，當前無法修改所屬組織',
+    },
+  },
   layout: {
     waitingAuth: '等待主系統授權...',
     requireMainSystem: '請從主系統開啟此外掛',

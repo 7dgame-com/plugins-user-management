@@ -138,6 +138,22 @@ export default {
       inviteCodeRequired: '招待コードを入力してください',
     },
   },
+  organization: {
+    title: '組織管理',
+    addTitle: '組織を追加',
+    editTitle: '組織を編集',
+    organizationTitle: '組織名',
+    organizationName: '組織キー',
+    userOrganizations: '所属組織',
+    organizationTitlePlaceholder: '組織名を入力',
+    organizationNamePlaceholder: '組織キーを入力',
+    messages: {
+      loadFailed: '組織一覧の取得に失敗しました',
+      titleRequired: '組織名を入力してください',
+      nameRequired: '組織キーを入力してください',
+      selectorLoadFailed: '組織一覧の読み込みに失敗したため、所属組織は現在変更できません',
+    },
+  },
   layout: {
     waitingAuth: '認証を待っています...',
     requireMainSystem: 'メインシステムからこのプラグインを開いてください',

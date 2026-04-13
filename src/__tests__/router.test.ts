@@ -40,4 +40,13 @@ describe('Preservation', () => {
     mockCan.mockReturnValue(true)
     expect(permissionGuard(to({ requiresPermission: 'list-users' }), from('Home'))).toBe(true)
   })
+
+  it('organization management route is protected by manage-organizations', () => {
+    mockCan.mockImplementation((permission: string) => permission === 'manage-organizations')
+    const result = permissionGuard(
+      to({ requiresPermission: 'manage-organizations' }),
+      from('Home')
+    )
+    expect(result).toBe(true)
+  })
 })

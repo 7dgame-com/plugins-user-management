@@ -9,6 +9,7 @@ export interface Permissions {
   'delete-user': boolean
   'change-role': boolean
   'manage-invitations': boolean
+  'manage-organizations': boolean
 }
 
 const permissions = ref<Permissions>({
@@ -19,6 +20,7 @@ const permissions = ref<Permissions>({
   'delete-user': false,
   'change-role': false,
   'manage-invitations': false,
+  'manage-organizations': false,
 })
 
 const loaded = ref(false)
@@ -36,7 +38,7 @@ export function usePermissions() {
         const allowedActions: string[] = data.data?.actions || []
         const allActions: (keyof Permissions)[] = [
           'list-users', 'view-user', 'create-user', 'update-user',
-          'delete-user', 'change-role', 'manage-invitations'
+          'delete-user', 'change-role', 'manage-invitations', 'manage-organizations'
         ]
         const hasWildcard = allowedActions.includes('*')
         allActions.forEach((a) => {

@@ -177,6 +177,22 @@ export default {
       inviteCodeRequired: 'Please enter invitation code',
     },
   },
+  organization: {
+    title: 'Organization Management',
+    addTitle: 'Add Organization',
+    editTitle: 'Edit Organization',
+    organizationTitle: 'Organization Title',
+    organizationName: 'Organization Key',
+    userOrganizations: 'Organizations',
+    organizationTitlePlaceholder: 'Enter organization title',
+    organizationNamePlaceholder: 'Enter organization key',
+    messages: {
+      loadFailed: 'Failed to load organizations',
+      titleRequired: 'Please enter organization title',
+      nameRequired: 'Please enter organization key',
+      selectorLoadFailed: 'Failed to load organizations, so assigned organizations cannot be changed right now',
+    },
+  },
   layout: {
     waitingAuth: 'Waiting for authorization...',
     requireMainSystem: 'Please open this plugin from the main system',

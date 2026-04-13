@@ -26,6 +26,14 @@ const pluginApi = axios.create({
   timeout: 10000
 })
 
+/**
+ * 主后端接口（指向主系统 /api/v1）
+ */
+const mainApi = axios.create({
+  baseURL: '/api/v1',
+  timeout: 10000
+})
+
 // --- Token refresh state ---
 let isRefreshing = false
 let failedQueue: Array<{
@@ -148,10 +156,11 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
 
 setupInterceptors(userApi)
 setupInterceptors(pluginApi)
+setupInterceptors(mainApi)
 
-// 默认导出 userApi（用户管理接口），同时具名导出 pluginApi
+// 默认导出 userApi（用户管理接口），同时具名导出 pluginApi / mainApi
 export default userApi
-export { pluginApi }
+export { pluginApi, mainApi }
 
 // --- Batch Create Users API ---
 
@@ -187,4 +196,36 @@ export interface BatchCreateResult {
 
 export function batchCreateUsers(payload: BatchCreatePayload): Promise<{ data: BatchCreateResult }> {
   return userApi.post('/batch-create-users', payload)
+}
+
+export interface OrganizationItem {
+  id: number
+  title: string
+  name: string
+}
+
+export interface OrganizationListResponse {
+  code: number
+  data: OrganizationItem[]
+}
+
+export interface OrganizationDetailResponse {
+  code: number
+  data: OrganizationItem
+}
+
+export function listOrganizations(): Promise<{ data: OrganizationListResponse }> {
+  return mainApi.get('/organization/list')
+}
+
+export function createOrganization(
+  payload: Pick<OrganizationItem, 'title' | 'name'>
+): Promise<{ data: OrganizationDetailResponse }> {
+  return mainApi.post('/organization/create', payload)
+}
+
+export function updateOrganization(
+  payload: Pick<OrganizationItem, 'id' | 'title'>
+): Promise<{ data: OrganizationDetailResponse }> {
+  return mainApi.post('/organization/update', payload)
 }

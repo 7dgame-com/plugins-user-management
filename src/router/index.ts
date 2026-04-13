@@ -61,6 +61,12 @@ const router = createRouter({
           component: () => import('../views/InvitationList.vue'),
           meta: { title: '邀请管理', requiresPermission: 'list-invitations' }
         },
+        {
+          path: 'organizations',
+          name: 'OrganizationList',
+          component: () => import('../views/OrganizationList.vue'),
+          meta: { title: '组织管理', requiresPermission: 'manage-organizations' }
+        },
       ]
     }
   ]

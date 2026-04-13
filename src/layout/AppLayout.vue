@@ -56,6 +56,16 @@
           <el-icon><Link /></el-icon>
           <span>邀请管理</span>
         </router-link>
+        <router-link
+          v-if="can('manage-organizations')"
+          to="/organizations"
+          class="sidebar-item"
+          :class="{ active: $route.path === '/organizations' }"
+          @click="sidebarOpen = false"
+        >
+          <el-icon><OfficeBuilding /></el-icon>
+          <span>{{ t('organization.title') }}</span>
+        </router-link>
       </nav>
     </aside>
 
@@ -88,10 +98,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Close, User, Plus, Fold, Link, DocumentCopy, Loading } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+import { Close, User, Plus, Fold, Link, DocumentCopy, Loading, OfficeBuilding } from '@element-plus/icons-vue'
 import api from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
+const { t } = useI18n()
 const { fetchPermissions, can, hasAny, loaded } = usePermissions()
 
 const sidebarOpen = ref(false)

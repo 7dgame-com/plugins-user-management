@@ -178,6 +178,22 @@ export default {
       inviteCodeRequired: '请输入邀请码',
     },
   },
+  organization: {
+    title: '组织管理',
+    addTitle: '新增组织',
+    editTitle: '编辑组织',
+    organizationTitle: '组织名称',
+    organizationName: '组织标识',
+    userOrganizations: '所属组织',
+    organizationTitlePlaceholder: '请输入组织名称',
+    organizationNamePlaceholder: '请输入组织标识',
+    messages: {
+      loadFailed: '获取组织列表失败',
+      titleRequired: '请输入组织名称',
+      nameRequired: '请输入组织标识',
+      selectorLoadFailed: '组织列表加载失败，当前无法修改所属组织',
+    },
+  },
   layout: {
     waitingAuth: '等待主系统授权...',
     requireMainSystem: '请从主系统打开此插件',

@@ -42,6 +42,28 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('organization.userOrganizations')">
+          <el-select
+            v-model="form.organization_ids"
+            multiple
+            filterable
+            clearable
+            style="width: 100%"
+            :loading="organizationsLoading"
+            :disabled="organizationsLoading || !!organizationsError"
+            data-testid="organization-select"
+          >
+            <el-option
+              v-for="organization in organizations"
+              :key="organization.id"
+              :label="organization.title"
+              :value="organization.id"
+            />
+          </el-select>
+          <div v-if="organizationsError" class="form-hint form-hint-error">
+            {{ organizationsError }}
+          </div>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" native-type="submit">
             {{ isEdit ? t('user.saveChanges') : t('user.createUser') }}
@@ -58,7 +80,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { pluginApi } from '../api'
+import api, { pluginApi, listOrganizations, type OrganizationItem } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -71,6 +93,9 @@ const route = useRoute()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const organizations = ref<OrganizationItem[]>([])
+const organizationsLoading = ref(false)
+const organizationsError = ref('')
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -83,6 +108,7 @@ const form = reactive({
   password: '',
   status: 10,
   role: '',
+  organization_ids: [] as number[],
 })
 
 function getRoleLevel(roles?: string[]): number {
@@ -146,15 +172,42 @@ async function loadUser() {
     const highest = getHighestRole(user.roles)
     form.role = highest
     originalRole.value = highest
+    form.organization_ids = Array.isArray(user.organizations)
+      ? user.organizations.map((organization: { id: number }) => organization.id)
+      : []
   } catch {
     ElMessage.error(t('user.messages.loadFailed'))
     router.back()
   }
 }
 
+async function loadOrganizations() {
+  organizationsLoading.value = true
+  organizationsError.value = ''
+  try {
+    const { data } = await listOrganizations()
+    if (data.code === 0 && Array.isArray(data.data)) {
+      organizations.value = data.data
+      return
+    }
+
+    organizations.value = []
+    organizationsError.value = t('organization.messages.selectorLoadFailed')
+    ElMessage.error(organizationsError.value)
+  } catch {
+    organizations.value = []
+    organizationsError.value = t('organization.messages.selectorLoadFailed')
+    ElMessage.error(organizationsError.value)
+  } finally {
+    organizationsLoading.value = false
+  }
+}
+
 async function handleSubmit() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (formRef.value) {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+  }
   loading.value = true
   try {
     const payload: any = {
@@ -163,6 +216,9 @@ async function handleSubmit() {
       status: form.status
     }
     if (form.password) payload.password = form.password
+    if (!isEdit.value || !organizationsError.value) {
+      payload.organization_ids = [...form.organization_ids]
+    }
 
     if (isEdit.value) {
       await api.post('/update-user', { id: route.params.id, ...payload })
@@ -189,6 +245,7 @@ async function handleSubmit() {
 
 onMounted(() => {
   fetchCurrentUser()
+  loadOrganizations()
   loadUser()
 })
 </script>
@@ -211,5 +268,14 @@ onMounted(() => {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+}
+
+.form-hint {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.form-hint-error {
+  color: var(--danger-color, #f56c6c);
 }
 </style>
