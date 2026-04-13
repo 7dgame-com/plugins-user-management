@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -64,5 +66,13 @@ describe('AppLayout', () => {
     expect(fetchPermissions).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-to="/organizations"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/organizations"]').text()).toContain('组织管理')
+  })
+
+  it('keeps the sidebar visible on desktop layouts', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/layout/AppLayout.vue'), 'utf8')
+
+    expect(source).toContain('@media (min-width: 1024px)')
+    expect(source).toContain('transform: none;')
+    expect(source).toContain('margin-left: 260px;')
   })
 })

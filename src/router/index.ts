@@ -59,7 +59,7 @@ const router = createRouter({
           path: 'invitations',
           name: 'InvitationList',
           component: () => import('../views/InvitationList.vue'),
-          meta: { title: '邀请管理', requiresPermission: 'list-invitations' }
+          meta: { title: '邀请管理', requiresPermission: 'manage-invitations' }
         },
         {
           path: 'organizations',

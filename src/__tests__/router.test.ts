@@ -8,7 +8,7 @@ vi.mock('../composables/usePermissions', () => ({
 vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn() } }))
 vi.mock('../utils/token', () => ({ isInIframe: vi.fn().mockReturnValue(true) }))
 
-import { permissionGuard } from '../router/index'
+import router, { permissionGuard } from '../router/index'
 
 const to = (meta: Record<string, unknown>) => ({ meta })
 const from = (name?: string) => ({ name: name ?? null })
@@ -48,5 +48,11 @@ describe('Preservation', () => {
       from('Home')
     )
     expect(result).toBe(true)
+  })
+
+  it('invitation management route is protected by manage-invitations', () => {
+    const invitationRoute = router.getRoutes().find((route) => route.name === 'InvitationList')
+
+    expect(invitationRoute?.meta.requiresPermission).toBe('manage-invitations')
   })
 })

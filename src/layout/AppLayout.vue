@@ -131,6 +131,10 @@ onMounted(async () => {
   background: var(--bg-page);
 }
 
+.main-area {
+  min-height: 100vh;
+}
+
 .sidebar-overlay {
   position: fixed;
   inset: 0;
@@ -279,5 +283,24 @@ onMounted(async () => {
   justify-content: center;
   height: 200px;
   color: var(--text-muted);
+}
+
+@media (min-width: 1024px) {
+  .sidebar-overlay {
+    display: none;
+  }
+
+  .sidebar {
+    transform: none;
+  }
+
+  .sidebar-close,
+  .menu-btn {
+    display: none;
+  }
+
+  .main-area {
+    margin-left: 260px;
+  }
 }
 </style>
