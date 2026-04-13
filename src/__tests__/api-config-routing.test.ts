@@ -8,9 +8,9 @@ afterEach(() => {
 })
 
 describe('user-management api-config routing semantics', () => {
-  it('pluginApi points at /api-config/v1/plugin', async () => {
+  it('pluginApi points at /api-config/api/v1/plugin', async () => {
     const { pluginApi } = await import('../api/index')
-    expect(pluginApi.defaults.baseURL).toBe('/api-config/v1/plugin')
+    expect(pluginApi.defaults.baseURL).toBe('/api-config/api/v1/plugin')
   })
 
   it('vite dev proxy rewrites /api-config to the system-admin backend', () => {

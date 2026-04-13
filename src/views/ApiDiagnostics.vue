@@ -255,7 +255,7 @@ const envInfo = reactive({
   location: window.location.href,
   origin: window.location.origin,
   userApiBase: api.defaults.baseURL || '/api/v1/plugin-user',
-  pluginApiBase: pluginApi.defaults.baseURL || '/api-config/v1/plugin',
+  pluginApiBase: pluginApi.defaults.baseURL || '/api-config/api/v1/plugin',
   mainApiBase: mainApi.defaults.baseURL || '/api/v1',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
@@ -284,7 +284,7 @@ function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi
   const base = instance === 'userApi'
     ? (api.defaults.baseURL || '/api/v1/plugin-user')
     : instance === 'pluginApi'
-      ? (pluginApi.defaults.baseURL || '/api-config/v1/plugin')
+      ? (pluginApi.defaults.baseURL || '/api-config/api/v1/plugin')
       : (mainApi.defaults.baseURL || '/api/v1')
   const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
   return {
@@ -360,7 +360,7 @@ interface RawTestItem {
 const rawTests = ref<RawTestItem[]>([
   { name: 'userApi /users', url: '/api/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'mainApi /plugin/verify-token', url: '/api/v1/plugin/verify-token', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /allowed-actions', url: '/api-config/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'pluginApi /allowed-actions', url: '/api-config/api/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Health Check', url: '/health', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Debug Env', url: '/debug-env', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
 ])
@@ -451,7 +451,7 @@ function makeProxyTest(name: string, url: string, expectedBackend: string): Prox
 
 const proxyTests = ref<ProxyTestItem[]>([
   makeProxyTest('/api/ → 后端 API', '/api/v1/plugin-user/users?page=1&pageSize=1', 'proxy_pass → API 后端'),
-  makeProxyTest('/api-config/ → 配置接口', '/api-config/v1/plugin/allowed-actions?plugin_name=user-management', 'proxy_pass → system-admin 配置后端'),
+  makeProxyTest('/api-config/ → 配置接口', '/api-config/api/v1/plugin/allowed-actions?plugin_name=user-management', 'proxy_pass → system-admin 配置后端'),
   makeProxyTest('/health → 健康检查', '/health', '本地 Nginx 直接返回'),
   makeProxyTest('/debug-env → 调试环境', '/debug-env', '本地 Nginx 静态文件'),
   makeProxyTest('/ → 前端静态文件', '/', '本地 Nginx try_files'),

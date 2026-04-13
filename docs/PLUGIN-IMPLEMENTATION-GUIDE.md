@@ -347,7 +347,7 @@ server {
 | 前端请求路径 | 代理目标 | 说明 |
 |-------------|---------|------|
 | `/api/*` | `${APP_API_N_URL}/*` | 业务 API 与认证刷新请求（如 `/api/v1/plugin-user/*`、`/api/auth/refresh`） |
-| `/api-config/*` | `${APP_CONFIG_N_URL}/*` | 通用插件接口（如 `/api-config/v1/plugin/*`） |
+| `/api-config/*` | `${APP_CONFIG_N_URL}/*` | 通用插件接口（如 `/api-config/api/v1/plugin/*`） |
 | `/*` | 本地静态文件 | SPA 页面 |
 
 > 注意：当前 user-management 已采用分路径代理模式：`/api/` 指向主后端，`/api-config/` 指向 system-admin 后端。
@@ -536,9 +536,9 @@ const userApi = axios.create({
   timeout: 10000
 })
 
-// 通用插件权限 API（allowed-actions 等，指向 system-admin 后端 /api-config/v1/plugin）
+// 通用插件权限 API（allowed-actions 等，指向 system-admin 后端 /api-config/api/v1/plugin）
 const pluginApi = axios.create({
-  baseURL: '/api-config/v1/plugin',
+  baseURL: '/api-config/api/v1/plugin',
   timeout: 10000
 })
 

@@ -82,12 +82,12 @@ xrugc-user-management:
 
 ## API
 
-插件前端通过 nginx 分两路代理后端请求：业务接口走 `/api/v1/plugin-user/`，通用插件接口走 `/api-config/v1/plugin/`：
+插件前端通过 nginx 分两路代理后端请求：业务接口走 `/api/v1/plugin-user/`，通用插件接口走 `/api-config/api/v1/plugin/`：
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
 | GET | /api/v1/plugin-user/me | 当前用户信息 | 需认证 |
-| GET | /api-config/v1/plugin/allowed-actions | 当前用户权限列表 | 需认证 |
+| GET | /api-config/api/v1/plugin/allowed-actions | 当前用户权限列表 | 需认证 |
 | GET | /api/v1/plugin-user/users | 用户列表（分页+搜索） | list-users |
 | GET | /api/v1/plugin-user/users/:id | 用户详情 | view-user |
 | POST | /api/v1/plugin-user/users | 创建用户 | create-user |

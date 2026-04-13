@@ -19,10 +19,10 @@ const userApi = axios.create({
 })
 
 /**
- * 通用插件权限接口（指向 system-admin 配置后端 /api-config/v1/plugin）
+ * 通用插件权限接口（指向 system-admin 配置后端 /api-config/api/v1/plugin）
  */
 const pluginApi = axios.create({
-  baseURL: '/api-config/v1/plugin',
+  baseURL: '/api-config/api/v1/plugin',
   timeout: 10000
 })
 
