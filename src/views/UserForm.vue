@@ -80,7 +80,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { pluginApi, listOrganizations, type OrganizationItem } from '../api'
+import api, { listOrganizations, type OrganizationItem, verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -146,9 +146,7 @@ const rules = computed(() => ({
 
 async function fetchCurrentUser() {
   try {
-    const { data } = await pluginApi.get('/verify-token', {
-      params: { plugin_name: 'user-management' }
-    })
+    const { data } = await verifyCurrentToken()
     currentUserRoles.value = data.data?.roles || []
   } catch {
     // silent

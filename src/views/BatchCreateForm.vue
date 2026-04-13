@@ -100,8 +100,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { FormInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { pluginApi } from '../api'
-import { batchCreateUsers } from '../api'
+import { batchCreateUsers, verifyCurrentToken } from '../api'
 import type { BatchCreateResultItem } from '../api'
 
 const { t } = useI18n()
@@ -214,7 +213,7 @@ const rules = computed(() => ({
 
 async function fetchCurrentUser() {
   try {
-    const { data } = await pluginApi.get('/verify-token', { params: { plugin_name: 'user-management' } })
+    const { data } = await verifyCurrentToken()
     currentUserRoles.value = data.data?.roles || []
   } catch { /* silent */ }
 }

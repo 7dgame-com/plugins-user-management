@@ -95,7 +95,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Search, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { pluginApi } from '../api'
+import api, { verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -150,9 +150,7 @@ const availableRoleOptions = computed(() => {
 
 async function fetchCurrentUser() {
   try {
-    const { data } = await pluginApi.get('/verify-token', {
-      params: { plugin_name: 'user-management' }
-    })
+    const { data } = await verifyCurrentToken()
     currentUserRoles.value = data.data?.roles || []
   } catch {
     // silent

@@ -536,9 +536,15 @@ const userApi = axios.create({
   timeout: 10000
 })
 
-// 通用插件 API（verify-token、allowed-actions 等，指向 system-admin 后端 /api-config/v1/plugin）
+// 通用插件权限 API（allowed-actions 等，指向 system-admin 后端 /api-config/v1/plugin）
 const pluginApi = axios.create({
   baseURL: '/api-config/v1/plugin',
+  timeout: 10000
+})
+
+// 主后端认证 API（verify-token）
+const mainApi = axios.create({
+  baseURL: '/api/v1',
   timeout: 10000
 })
 ```

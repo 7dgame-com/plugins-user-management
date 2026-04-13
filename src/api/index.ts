@@ -19,7 +19,7 @@ const userApi = axios.create({
 })
 
 /**
- * 通用插件接口（指向 system-admin 配置后端 /api-config/v1/plugin）
+ * 通用插件权限接口（指向 system-admin 配置后端 /api-config/v1/plugin）
  */
 const pluginApi = axios.create({
   baseURL: '/api-config/v1/plugin',
@@ -161,6 +161,24 @@ setupInterceptors(mainApi)
 // 默认导出 userApi（用户管理接口），同时具名导出 pluginApi / mainApi
 export default userApi
 export { pluginApi, mainApi }
+
+export interface VerifyTokenResponse {
+  code: number
+  message?: string
+  data: {
+    id: number
+    username?: string
+    nickname?: string
+    roles?: string[]
+  }
+}
+
+/**
+ * 当前用户 token 校验始终由主后端提供。
+ */
+export function verifyCurrentToken(): Promise<{ data: VerifyTokenResponse }> {
+  return mainApi.get('/plugin/verify-token')
+}
 
 // --- Batch Create Users API ---
 

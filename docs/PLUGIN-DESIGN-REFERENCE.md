@@ -199,8 +199,11 @@ to.meta.public?
 // 业务 API（插件专属）
 const userApi = axios.create({ baseURL: '/api/v1/plugin-user', timeout: 10000 })
 
-// 通用插件 API（verify-token、allowed-actions 等）
+// 通用插件权限 API（allowed-actions 等）
 const pluginApi = axios.create({ baseURL: '/api-config/v1/plugin', timeout: 10000 })
+
+// 主后端认证 API（verify-token）
+const mainApi = axios.create({ baseURL: '/api/v1', timeout: 10000 })
 ```
 
 ### 6.2 请求拦截器

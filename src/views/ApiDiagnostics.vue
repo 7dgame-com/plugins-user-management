@@ -26,12 +26,20 @@
           <code>{{ envInfo.pluginApiBase }}</code>
         </div>
         <div class="info-item">
+          <span class="label">mainApi baseURL</span>
+          <code>{{ envInfo.mainApiBase }}</code>
+        </div>
+        <div class="info-item">
           <span class="label">实际请求 userApi 完整地址</span>
           <code>{{ envInfo.origin }}{{ envInfo.userApiBase }}</code>
         </div>
         <div class="info-item">
           <span class="label">实际请求 pluginApi 完整地址</span>
           <code>{{ envInfo.origin }}{{ envInfo.pluginApiBase }}</code>
+        </div>
+        <div class="info-item">
+          <span class="label">实际请求 mainApi 完整地址</span>
+          <code>{{ envInfo.origin }}{{ envInfo.mainApiBase }}</code>
         </div>
         <div class="info-item">
           <span class="label">Token 状态</span>
@@ -239,7 +247,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import api, { pluginApi } from '../api'
+import api, { mainApi, pluginApi } from '../api'
 import { getToken, isInIframe } from '../utils/token'
 
 // ---- 环境信息 ----
@@ -248,6 +256,7 @@ const envInfo = reactive({
   origin: window.location.origin,
   userApiBase: api.defaults.baseURL || '/api/v1/plugin-user',
   pluginApiBase: pluginApi.defaults.baseURL || '/api-config/v1/plugin',
+  mainApiBase: mainApi.defaults.baseURL || '/api/v1',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
   upstreams: '加载中...',
@@ -259,7 +268,7 @@ const envInfo = reactive({
 interface TestItem {
   name: string
   method: string
-  instance: 'userApi' | 'pluginApi'
+  instance: 'userApi' | 'pluginApi' | 'mainApi'
   path: string
   params?: Record<string, any>
   fullUrl: string
@@ -271,8 +280,12 @@ interface TestItem {
   errorMessage: string
 }
 
-function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi', path: string, params?: Record<string, any>): TestItem {
-  const base = instance === 'userApi' ? (api.defaults.baseURL || '/api/v1/plugin-user') : (pluginApi.defaults.baseURL || '/api-config/v1/plugin')
+function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi' | 'mainApi', path: string, params?: Record<string, any>): TestItem {
+  const base = instance === 'userApi'
+    ? (api.defaults.baseURL || '/api/v1/plugin-user')
+    : instance === 'pluginApi'
+      ? (pluginApi.defaults.baseURL || '/api-config/v1/plugin')
+      : (mainApi.defaults.baseURL || '/api/v1')
   const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
   return {
     name, method, instance, path, params,
@@ -284,7 +297,7 @@ function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi
 const tests = ref<TestItem[]>([
   makeTest('获取用户列表', 'GET', 'userApi', '/users', { page: '1', pageSize: '20' }),
   makeTest('获取单个用户', 'GET', 'userApi', '/users', { id: '1' }),
-  makeTest('验证 Token', 'GET', 'pluginApi', '/verify-token', { plugin_name: 'user-management' }),
+  makeTest('验证 Token', 'GET', 'mainApi', '/plugin/verify-token'),
   makeTest('获取权限列表', 'GET', 'pluginApi', '/allowed-actions', { plugin_name: 'user-management' }),
   makeTest('获取邀请列表', 'GET', 'userApi', '/invitations'),
   makeTest('Health Check', 'GET', 'userApi', '/../health'),
@@ -298,7 +311,7 @@ async function runSingle(item: TestItem) {
   item.errorMessage = ''
   item.httpStatus = ''
 
-  const inst = item.instance === 'userApi' ? api : pluginApi
+  const inst = item.instance === 'userApi' ? api : item.instance === 'pluginApi' ? pluginApi : mainApi
   try {
     const resp = await inst.request({
       method: item.method,
@@ -346,7 +359,7 @@ interface RawTestItem {
 
 const rawTests = ref<RawTestItem[]>([
   { name: 'userApi /users', url: '/api/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /verify-token', url: '/api-config/v1/plugin/verify-token?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'mainApi /plugin/verify-token', url: '/api/v1/plugin/verify-token', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'pluginApi /allowed-actions', url: '/api-config/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Health Check', url: '/health', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Debug Env', url: '/debug-env', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },

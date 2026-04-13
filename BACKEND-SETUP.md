@@ -6,7 +6,7 @@
 
 - Docker 镜像已构建并部署：`hkccr.ccs.tencentyun.com/plugins/user-manager:develop`
 - nginx 现按前缀拆分上游：
-  - 前端请求 `/api-config/v1/plugin/verify-token` → `APP_CONFIG_N_URL + /v1/plugin/verify-token`
+  - 前端请求 `/api/v1/plugin/verify-token` → `APP_API_N_URL + /v1/plugin/verify-token`
   - 前端请求 `/api/v1/plugin-user/users` → `APP_API_N_URL + /v1/plugin-user/users`
 
 ## 问题
