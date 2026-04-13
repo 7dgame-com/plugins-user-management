@@ -11,7 +11,7 @@
     <aside v-if="hasAny()" class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <span class="sidebar-title">用户管理</span>
-        <button class="sidebar-close" @click="sidebarOpen = false">
+        <button class="sidebar-close" aria-label="收起侧边栏" @click="sidebarOpen = false">
           <el-icon><Close /></el-icon>
         </button>
       </div>
@@ -70,10 +70,16 @@
     </aside>
 
     <!-- 主内容区 -->
-    <div class="main-area" :class="{ 'with-sidebar': hasAny() }">
+    <div class="main-area">
       <header class="navbar">
-        <button v-if="hasAny()" class="menu-btn" @click="sidebarOpen = true">
-          <el-icon :size="20"><Fold /></el-icon>
+        <button
+          v-if="hasAny()"
+          class="menu-btn"
+          aria-label="展开侧边栏"
+          title="展开侧边栏"
+          @click="sidebarOpen = true"
+        >
+          <el-icon :size="18"><Expand /></el-icon>
         </button>
         <h1 class="navbar-title">{{ $route.meta.title || '用户管理' }}</h1>
         <div class="navbar-spacer" />
@@ -99,7 +105,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Close, User, Plus, Fold, Link, DocumentCopy, Loading, OfficeBuilding } from '@element-plus/icons-vue'
+import { Close, User, Plus, Link, DocumentCopy, Loading, OfficeBuilding, Expand } from '@element-plus/icons-vue'
 import api from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
@@ -239,20 +245,23 @@ onMounted(async () => {
 }
 
 .menu-btn {
-  background: none;
-  border: none;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   cursor: pointer;
   color: var(--text-secondary);
   padding: var(--spacing-sm);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   transition: all var(--transition-fast);
   display: flex;
   align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
 }
 
 .menu-btn:hover {
   background: var(--bg-hover);
   color: var(--primary-color);
+  border-color: var(--border-color-hover);
 }
 
 .navbar-title {
@@ -286,21 +295,8 @@ onMounted(async () => {
 }
 
 @media (min-width: 1024px) {
-  .sidebar-overlay {
-    display: none;
-  }
-
-  .sidebar {
-    transform: none;
-  }
-
-  .sidebar-close,
-  .menu-btn {
-    display: none;
-  }
-
-  .main-area.with-sidebar {
-    margin-left: 260px;
+  .content {
+    padding: var(--spacing-xl);
   }
 }
 </style>
