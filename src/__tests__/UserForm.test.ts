@@ -9,8 +9,8 @@ const {
   back,
   apiGet,
   apiPost,
-  pluginGet,
   listOrganizations,
+  verifyCurrentToken,
   messageError,
   messageSuccess,
 } = vi.hoisted(() => ({
@@ -19,8 +19,8 @@ const {
   back: vi.fn(),
   apiGet: vi.fn(),
   apiPost: vi.fn(),
-  pluginGet: vi.fn(),
   listOrganizations: vi.fn(),
+  verifyCurrentToken: vi.fn(),
   messageError: vi.fn(),
   messageSuccess: vi.fn(),
 }))
@@ -49,8 +49,8 @@ vi.mock('../composables/usePermissions', () => ({
 
 vi.mock('../api', () => ({
   default: { get: apiGet, post: apiPost },
-  pluginApi: { get: pluginGet },
   listOrganizations: (...args: unknown[]) => listOrganizations(...args),
+  verifyCurrentToken: (...args: unknown[]) => verifyCurrentToken(...args),
 }))
 
 const ElFormStub = defineComponent({
@@ -135,12 +135,12 @@ describe('UserForm', () => {
     back.mockReset()
     apiGet.mockReset()
     apiPost.mockReset()
-    pluginGet.mockReset()
     listOrganizations.mockReset()
+    verifyCurrentToken.mockReset()
     messageError.mockReset()
     messageSuccess.mockReset()
 
-    pluginGet.mockResolvedValue({ data: { data: { roles: ['admin'] } } })
+    verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['admin'] } } })
     listOrganizations.mockResolvedValue({
       data: {
         code: 0,
@@ -160,8 +160,9 @@ describe('UserForm', () => {
 
     const inputs = wrapper.findAll('input')
     await inputs[0].setValue('alice')
-    await inputs[1].setValue('alice@example.com')
-    await inputs[2].setValue('secret123')
+    await inputs[1].setValue('Alice Liddell')
+    await inputs[2].setValue('alice@example.com')
+    await inputs[3].setValue('secret123')
     expect(wrapper.get('[data-testid="organization-select"]').exists()).toBe(true)
     ;(wrapper.vm as any).form.organization_ids = [1, 2]
     await (wrapper.vm as any).handleSubmit()
@@ -170,18 +171,20 @@ describe('UserForm', () => {
     expect(listOrganizations).toHaveBeenCalledTimes(1)
     expect(apiPost).toHaveBeenCalledWith('/create-user', expect.objectContaining({
       username: 'alice',
+      nickname: 'Alice Liddell',
       email: 'alice@example.com',
       organization_ids: [1, 2],
     }))
     expect(push).toHaveBeenCalledWith('/users')
   })
 
-  it('loads existing organizations and submits replacement ids when editing a user', async () => {
+  it('loads existing data in edit mode and keeps username read-only', async () => {
     routeState.params = { id: '42' }
     apiGet.mockResolvedValue({
       data: {
         data: {
           username: 'alice',
+          nickname: 'Alice Liddell',
           email: 'alice@example.com',
           status: 10,
           roles: ['manager'],
@@ -194,16 +197,45 @@ describe('UserForm', () => {
 
     await flushPromises()
 
+    const inputs = wrapper.findAll('input')
+    expect(inputs[0].element).toHaveProperty('value', 'alice')
+    expect(inputs[0].attributes('disabled')).toBeDefined()
+    expect(inputs[1].element).toHaveProperty('value', 'Alice Liddell')
     expect((wrapper.vm as any).form.organization_ids).toEqual([1])
+  })
+
+  it('submits nickname and replacement organization ids when editing a user', async () => {
+    routeState.params = { id: '42' }
+    apiGet.mockResolvedValue({
+      data: {
+        data: {
+          username: 'alice',
+          nickname: 'Alice Liddell',
+          email: 'alice@example.com',
+          status: 10,
+          roles: ['manager'],
+          organizations: [{ id: 1, title: 'Acme Studio', name: 'acme' }],
+        },
+      },
+    })
+
+    const wrapper = mountForm()
+
+    await flushPromises()
 
     expect(wrapper.get('[data-testid="organization-select"]').exists()).toBe(true)
+    ;(wrapper.vm as any).form.nickname = 'Alice Updated'
     ;(wrapper.vm as any).form.organization_ids = [2]
     await (wrapper.vm as any).handleSubmit()
     await flushPromises()
 
     expect(apiPost).toHaveBeenCalledWith('/update-user', expect.objectContaining({
       id: '42',
+      nickname: 'Alice Updated',
       organization_ids: [2],
+    }))
+    expect(apiPost).toHaveBeenCalledWith('/update-user', expect.not.objectContaining({
+      username: expect.anything(),
     }))
   })
 
@@ -214,6 +246,7 @@ describe('UserForm', () => {
       data: {
         data: {
           username: 'alice',
+          nickname: 'Alice Liddell',
           email: 'alice@example.com',
           status: 10,
           roles: ['manager'],

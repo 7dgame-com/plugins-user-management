@@ -13,7 +13,14 @@
         @submit.prevent="handleSubmit"
       >
         <el-form-item :label="t('user.username')" prop="username">
-          <el-input v-model="form.username" :placeholder="t('user.usernamePlaceholder')" />
+          <el-input
+            v-model="form.username"
+            :placeholder="t('user.usernamePlaceholder')"
+            :disabled="isEdit"
+          />
+        </el-form-item>
+        <el-form-item :label="t('user.nickname')">
+          <el-input v-model="form.nickname" />
         </el-form-item>
         <el-form-item :label="t('user.email')" prop="email">
           <el-input v-model="form.email" :placeholder="t('user.emailPlaceholder')" />
@@ -104,6 +111,7 @@ const originalRole = ref('')
 
 const form = reactive({
   username: '',
+  nickname: '',
   email: '',
   password: '',
   status: 10,
@@ -165,6 +173,7 @@ async function loadUser() {
       return
     }
     form.username = user.username
+    form.nickname = user.nickname || ''
     form.email = user.email || ''
     form.status = user.status
     const highest = getHighestRole(user.roles)
@@ -209,10 +218,11 @@ async function handleSubmit() {
   loading.value = true
   try {
     const payload: any = {
-      username: form.username,
+      nickname: form.nickname,
       email: form.email,
       status: form.status
     }
+    if (!isEdit.value) payload.username = form.username
     if (form.password) payload.password = form.password
     if (!isEdit.value || !organizationsError.value) {
       payload.organization_ids = [...form.organization_ids]

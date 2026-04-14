@@ -30,6 +30,23 @@
         <el-table-column prop="username" :label="t('user.username')" min-width="140" sortable="custom" />
         <el-table-column prop="nickname" :label="t('user.nickname')" min-width="140" sortable="custom" />
         <el-table-column prop="email" :label="t('user.email')" min-width="200" sortable="custom" />
+        <el-table-column prop="organizations" :label="t('organization.userOrganizations')" min-width="220">
+          <template #default="{ row }">
+            <div
+              v-if="Array.isArray(row.organizations) && row.organizations.length > 0"
+              class="organization-list"
+            >
+              <span
+                v-for="organization in row.organizations"
+                :key="organization.id"
+                class="organization-chip"
+              >
+                {{ organization.title }}
+              </span>
+            </div>
+            <span v-else class="organization-empty">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="roles" :label="t('user.role')" width="160" sortable="custom">
           <template #default="{ row }">
             <el-select
@@ -240,5 +257,26 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   border-top: 1px solid var(--border-color);
+}
+
+.organization-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.organization-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle, #f4f7fb);
+  color: var(--text-secondary, #606266);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.organization-empty {
+  color: var(--text-muted, #909399);
 }
 </style>
