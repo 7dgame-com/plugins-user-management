@@ -102,4 +102,30 @@ describe('Preservation', () => {
       api.defaults.adapter = originalAdapter
     }
   })
+
+  it('batchCreateUsers disables the short default timeout for long-running jobs', async () => {
+    const { default: api, batchCreateUsers } = await import('../api/index')
+    const payload = {
+      users: [
+        {
+          username: 'batch-user-001',
+          nickname: 'Batch User 001',
+          password: 'secret123',
+          role: 'user',
+          status: 10,
+        },
+      ],
+    }
+
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        code: 0,
+        data: { total: 1, success: 1, failed: 0, results: [] },
+      },
+    } as any)
+
+    await batchCreateUsers(payload)
+
+    expect(postSpy).toHaveBeenCalledWith('/batch-create-users', payload, { timeout: 0 })
+  })
 })

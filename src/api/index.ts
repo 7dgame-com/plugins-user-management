@@ -214,7 +214,12 @@ export interface BatchCreateResult {
 }
 
 export function batchCreateUsers(payload: BatchCreatePayload): Promise<{ data: BatchCreateResult }> {
-  return userApi.post('/batch-create-users', payload)
+  return userApi.post('/batch-create-users', payload, {
+    // Batch creation is intentionally long-running for larger user sets.
+    // Keep this request from inheriting the generic 10s timeout and
+    // incorrectly surfacing a failure after the server already completed.
+    timeout: 0,
+  })
 }
 
 export interface OrganizationItem {
