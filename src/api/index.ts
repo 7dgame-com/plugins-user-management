@@ -192,6 +192,7 @@ export interface BatchCreateUserItem {
 
 export interface BatchCreatePayload {
   users: BatchCreateUserItem[]
+  organization_ids?: number[]
 }
 
 export interface BatchCreateResultItem {

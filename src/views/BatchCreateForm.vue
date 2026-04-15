@@ -39,6 +39,28 @@
             <el-option :label="t('user.status.disabled')" :value="0" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('organization.userOrganizations')">
+          <el-select
+            v-model="form.organization_ids"
+            multiple
+            filterable
+            clearable
+            style="width: 100%"
+            :loading="organizationsLoading"
+            :disabled="organizationsLoading || !!organizationsError"
+            data-testid="organization-select"
+          >
+            <el-option
+              v-for="organization in organizations"
+              :key="organization.id"
+              :label="organization.title"
+              :value="organization.id"
+            />
+          </el-select>
+          <div v-if="organizationsError" class="form-hint form-hint-error">
+            {{ organizationsError }}
+          </div>
+        </el-form-item>
       </el-form>
 
       <!-- 预览表格 -->
@@ -100,8 +122,8 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { FormInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { batchCreateUsers, verifyCurrentToken } from '../api'
-import type { BatchCreateResultItem } from '../api'
+import { batchCreateUsers, listOrganizations, verifyCurrentToken } from '../api'
+import type { BatchCreateResultItem, OrganizationItem } from '../api'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -114,6 +136,9 @@ const phase = ref<PagePhase>('form')
 const formRef = ref<FormInstance>()
 const currentUserRoles = ref<string[]>([])
 const resultData = ref<{ total: number; success: number; failed: number; results: BatchCreateResultItem[] } | null>(null)
+const organizations = ref<OrganizationItem[]>([])
+const organizationsLoading = ref(false)
+const organizationsError = ref('')
 
 const form = reactive({
   usernameTemplate: '',
@@ -123,6 +148,7 @@ const form = reactive({
   password: '',
   role: 'user',
   status: 10,
+  organization_ids: [] as number[],
 })
 
 // --- Template parsing ---
@@ -218,6 +244,28 @@ async function fetchCurrentUser() {
   } catch { /* silent */ }
 }
 
+async function loadOrganizations() {
+  organizationsLoading.value = true
+  organizationsError.value = ''
+  try {
+    const { data } = await listOrganizations()
+    if (data.code === 0 && Array.isArray(data.data)) {
+      organizations.value = data.data
+      return
+    }
+
+    organizations.value = []
+    organizationsError.value = t('organization.messages.selectorLoadFailed')
+    ElMessage.error(organizationsError.value)
+  } catch {
+    organizations.value = []
+    organizationsError.value = t('organization.messages.selectorLoadFailed')
+    ElMessage.error(organizationsError.value)
+  } finally {
+    organizationsLoading.value = false
+  }
+}
+
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -239,7 +287,10 @@ async function handleSubmit() {
   }))
 
   try {
-    const { data } = await batchCreateUsers({ users })
+    const { data } = await batchCreateUsers({
+      users,
+      organization_ids: [...form.organization_ids],
+    })
     resultData.value = data.data
     phase.value = 'result'
   } catch (err: any) {
@@ -264,6 +315,7 @@ function handleCreateAnother() {
 
 onMounted(() => {
   fetchCurrentUser()
+  loadOrganizations()
 })
 </script>
 
@@ -288,6 +340,9 @@ onMounted(() => {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin-top: 4px;
+}
+.form-hint-error {
+  color: var(--danger-color, #f56c6c);
 }
 .preview-section {
   padding: 0 var(--spacing-lg) var(--spacing-lg);
