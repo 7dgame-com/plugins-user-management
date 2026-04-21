@@ -132,7 +132,7 @@ describe('UserList', () => {
     verifyCurrentToken.mockReset()
     messageError.mockReset()
 
-    verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['admin'] } } })
+    verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['root'] } } })
   })
 
   it('renders organization titles from the user list payload', async () => {

@@ -6,13 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../i18n'
 import AppLayout from '../layout/AppLayout.vue'
 
-const { apiGet, fetchPermissions } = vi.hoisted(() => ({
-  apiGet: vi.fn(),
+const { fetchPermissions, fetchSession } = vi.hoisted(() => ({
   fetchPermissions: vi.fn(),
-}))
-
-vi.mock('../api', () => ({
-  default: { get: apiGet },
+  fetchSession: vi.fn(),
 }))
 
 vi.mock('../composables/usePermissions', () => ({
@@ -24,16 +20,20 @@ vi.mock('../composables/usePermissions', () => ({
   }),
 }))
 
+vi.mock('../composables/useAuthSession', () => ({
+  useAuthSession: () => ({
+    user: ref({ id: 1, username: 'root', nickname: 'Root', roles: ['root'] }),
+    fetchSession,
+  }),
+}))
+
 describe('AppLayout', () => {
   beforeEach(() => {
-    apiGet.mockReset()
     fetchPermissions.mockReset()
-    apiGet.mockResolvedValue({
-      data: { id: 1, username: 'root', nickname: 'Root', roles: ['admin'] },
-    })
+    fetchSession.mockReset()
   })
 
-  it('renders the organizations navigation entry when permission is granted', async () => {
+  it('renders the organizations navigation entry when local access is granted', async () => {
     const wrapper = mount(AppLayout, {
       global: {
         plugins: [i18n],
@@ -57,6 +57,7 @@ describe('AppLayout', () => {
           DocumentCopy: true,
           Loading: true,
           OfficeBuilding: true,
+          Expand: true,
         },
       },
     })
@@ -92,6 +93,7 @@ describe('AppLayout', () => {
           DocumentCopy: true,
           Loading: true,
           OfficeBuilding: true,
+          Expand: true,
         },
       },
     })

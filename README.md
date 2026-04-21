@@ -82,12 +82,11 @@ xrugc-user-management:
 
 ## API
 
-插件前端通过 nginx 分两路代理后端请求：业务接口走 `/api/v1/plugin-user/`，通用插件接口走 `/api-config/api/v1/plugin/`：
+插件前端现在只通过 `/api/` 代理主后端。插件内部会用主后端 `GET /api/v1/plugin/verify-token` 拉取当前用户角色，并在前端本地做访问判断：
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | /api/v1/plugin-user/me | 当前用户信息 | 需认证 |
-| GET | /api-config/api/v1/plugin/allowed-actions | 当前用户权限列表 | 需认证 |
+| GET | /api/v1/plugin/verify-token | 当前用户身份与角色 | 需认证 |
 | GET | /api/v1/plugin-user/users | 用户列表（分页+搜索） | list-users |
 | GET | /api/v1/plugin-user/users/:id | 用户详情 | view-user |
 | POST | /api/v1/plugin-user/users | 创建用户 | create-user |
@@ -99,29 +98,17 @@ xrugc-user-management:
 | DELETE | /api/v1/plugin-user/invitations/:id | 撤销邀请 | manage-invitations |
 | GET | /api/v1/plugin-user/health | 健康检查 | 无 |
 
-## 权限配置
+## 前端访问逻辑
 
-在主后端管理后台的「插件权限配置」中添加。`action` 字段支持逗号分隔配置多个操作，`*` 表示全部权限。
+前端不再依赖 `system-admin` 的 `allowed-actions` / `api-config`。
 
-### 动作权限说明
-
-| action | 说明 |
-|--------|------|
-| list-users | 查看用户列表 |
-| view-user | 查看用户详情 |
-| create-user | 创建用户（含批量创建） |
-| update-user | 编辑用户 |
-| delete-user | 删除用户 |
-| change-role | 修改用户角色 |
-| manage-invitations | 管理邀请码 |
-
-### 配置示例
-
-管理员拥有全部权限：
+- `root`：本地视为可访问 `user-management`
+- 其他已登录角色（含 `admin`）：前端显示无权限态
+- 具体业务接口仍由主后端 RBAC 最终校验
 
 | role_or_permission | plugin_name | action |
 |---|---|---|
-| admin | user-management | * |
+| root | user-management | * |
 
 只读角色（仅查看）：
 

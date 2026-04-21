@@ -19,14 +19,6 @@ const userApi = axios.create({
 })
 
 /**
- * 通用插件权限接口（指向 system-admin 配置后端 /api-config/api/v1/plugin）
- */
-const pluginApi = axios.create({
-  baseURL: '/api-config/api/v1/plugin',
-  timeout: 10000
-})
-
-/**
  * 主后端接口（指向主系统 /api/v1）
  */
 const mainApi = axios.create({
@@ -155,12 +147,11 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
 }
 
 setupInterceptors(userApi)
-setupInterceptors(pluginApi)
 setupInterceptors(mainApi)
 
-// 默认导出 userApi（用户管理接口），同时具名导出 pluginApi / mainApi
+// 默认导出 userApi（用户管理接口），同时具名导出 mainApi
 export default userApi
-export { pluginApi, mainApi }
+export { mainApi }
 
 export interface VerifyTokenResponse {
   code: number

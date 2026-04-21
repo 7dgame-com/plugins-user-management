@@ -94,7 +94,7 @@
           <el-icon class="is-loading" :size="24"><Loading /></el-icon>
         </div>
         <div v-else-if="loaded && !hasAny()" class="no-permission">
-          <el-empty description="您没有此插件的任何操作权限，请联系管理员配置" />
+          <el-empty description="此插件目前仅对 root 用户开放" />
         </div>
         <router-view v-else />
       </main>
@@ -103,26 +103,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Close, User, Plus, Link, DocumentCopy, Loading, OfficeBuilding, Expand } from '@element-plus/icons-vue'
-import api from '../api'
+import { useAuthSession } from '../composables/useAuthSession'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
+const { user } = useAuthSession()
 const { fetchPermissions, can, hasAny, loaded } = usePermissions()
 
 const sidebarOpen = ref(false)
-const userInfo = ref<{ id: number; username: string; nickname: string; roles: string[] } | null>(null)
+const userInfo = computed(() => user.value)
 const ready = ref(false)
 
 onMounted(async () => {
   try {
-    const [{ data }] = await Promise.all([
-      api.get('/me'),
-      fetchPermissions(),
-    ])
-    userInfo.value = data
+    await fetchPermissions()
   } catch {
     // 静默失败，不影响页面使用
   } finally {

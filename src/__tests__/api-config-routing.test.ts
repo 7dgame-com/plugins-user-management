@@ -7,33 +7,34 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('user-management api-config routing semantics', () => {
-  it('pluginApi points at /api-config/api/v1/plugin', async () => {
-    const { pluginApi } = await import('../api/index')
-    expect(pluginApi.defaults.baseURL).toBe('/api-config/api/v1/plugin')
-  })
-
-  it('vite dev proxy rewrites /api-config to the system-admin backend', () => {
-    const viteConfig = readFileSync(resolve(process.cwd(), 'vite.config.ts'), 'utf8')
-    expect(viteConfig).toContain("'/api-config'")
-    expect(viteConfig).toContain("path.replace(/^\\/api-config/, '')")
-  })
-
-  it('docker entrypoint uses APP_CONFIG and /api-config for system-admin upstreams', () => {
-    const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
-    expect(entrypoint).toContain('generate_lb_config "APP_CONFIG" "/api-config/" "config"')
-    expect(entrypoint).toContain('APP_CONFIG_${i}_URL')
-    expect(entrypoint).not.toContain('generate_lb_config "APP_BACKEND" "/backend/" "backend"')
-  })
-
-  it('verifyCurrentToken uses the main backend plugin endpoint instead of api-config', async () => {
+describe('user-management auth-session routing semantics', () => {
+  it('removes the standalone plugin api-config client and keeps verify-token on the main backend', async () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/api/index.ts'), 'utf8')
     const mod = await import('../api/index')
     const mainGet = vi.spyOn(mod.mainApi, 'get').mockResolvedValue({ data: { code: 0 } } as never)
-    const pluginGet = vi.spyOn(mod.pluginApi, 'get').mockResolvedValue({ data: { code: 0 } } as never)
+
+    expect(source).not.toContain('/api-config/api/v1/plugin')
+    expect('pluginApi' in mod).toBe(false)
 
     await mod.verifyCurrentToken()
 
     expect(mainGet).toHaveBeenCalledWith('/plugin/verify-token')
-    expect(pluginGet).not.toHaveBeenCalled()
+  })
+
+  it('vite dev proxy no longer exposes /api-config', () => {
+    const viteConfig = readFileSync(resolve(process.cwd(), 'vite.config.ts'), 'utf8')
+
+    expect(viteConfig).not.toContain("'/api-config'")
+    expect(viteConfig).not.toContain('path.replace(/^\\/api-config/, \'\')')
+    expect(viteConfig).toContain("'/api'")
+  })
+
+  it('docker runtime wiring no longer generates api-config upstreams', () => {
+    const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
+    const nginxTemplate = readFileSync(resolve(process.cwd(), 'nginx.conf.template'), 'utf8')
+
+    expect(entrypoint).not.toContain('generate_lb_config "APP_CONFIG" "/api-config/" "config"')
+    expect(entrypoint).not.toContain('APP_CONFIG_${i}_URL')
+    expect(nginxTemplate).not.toContain('# __CONFIG_LOCATIONS__')
   })
 })

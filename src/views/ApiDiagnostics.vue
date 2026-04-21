@@ -22,20 +22,12 @@
           <code>{{ envInfo.userApiBase }}</code>
         </div>
         <div class="info-item">
-          <span class="label">pluginApi baseURL</span>
-          <code>{{ envInfo.pluginApiBase }}</code>
-        </div>
-        <div class="info-item">
           <span class="label">mainApi baseURL</span>
           <code>{{ envInfo.mainApiBase }}</code>
         </div>
         <div class="info-item">
           <span class="label">实际请求 userApi 完整地址</span>
           <code>{{ envInfo.origin }}{{ envInfo.userApiBase }}</code>
-        </div>
-        <div class="info-item">
-          <span class="label">实际请求 pluginApi 完整地址</span>
-          <code>{{ envInfo.origin }}{{ envInfo.pluginApiBase }}</code>
         </div>
         <div class="info-item">
           <span class="label">实际请求 mainApi 完整地址</span>
@@ -247,7 +239,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import api, { mainApi, pluginApi } from '../api'
+import api, { mainApi } from '../api'
 import { getToken, isInIframe } from '../utils/token'
 
 // ---- 环境信息 ----
@@ -255,7 +247,6 @@ const envInfo = reactive({
   location: window.location.href,
   origin: window.location.origin,
   userApiBase: api.defaults.baseURL || '/api/v1/plugin-user',
-  pluginApiBase: pluginApi.defaults.baseURL || '/api-config/api/v1/plugin',
   mainApiBase: mainApi.defaults.baseURL || '/api/v1',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
@@ -268,7 +259,7 @@ const envInfo = reactive({
 interface TestItem {
   name: string
   method: string
-  instance: 'userApi' | 'pluginApi' | 'mainApi'
+  instance: 'userApi' | 'mainApi'
   path: string
   params?: Record<string, any>
   fullUrl: string
@@ -280,12 +271,10 @@ interface TestItem {
   errorMessage: string
 }
 
-function makeTest(name: string, method: string, instance: 'userApi' | 'pluginApi' | 'mainApi', path: string, params?: Record<string, any>): TestItem {
+function makeTest(name: string, method: string, instance: 'userApi' | 'mainApi', path: string, params?: Record<string, any>): TestItem {
   const base = instance === 'userApi'
     ? (api.defaults.baseURL || '/api/v1/plugin-user')
-    : instance === 'pluginApi'
-      ? (pluginApi.defaults.baseURL || '/api-config/api/v1/plugin')
-      : (mainApi.defaults.baseURL || '/api/v1')
+    : (mainApi.defaults.baseURL || '/api/v1')
   const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
   return {
     name, method, instance, path, params,
@@ -298,7 +287,6 @@ const tests = ref<TestItem[]>([
   makeTest('获取用户列表', 'GET', 'userApi', '/users', { page: '1', pageSize: '20' }),
   makeTest('获取单个用户', 'GET', 'userApi', '/users', { id: '1' }),
   makeTest('验证 Token', 'GET', 'mainApi', '/plugin/verify-token'),
-  makeTest('获取权限列表', 'GET', 'pluginApi', '/allowed-actions', { plugin_name: 'user-management' }),
   makeTest('获取邀请列表', 'GET', 'userApi', '/invitations'),
   makeTest('Health Check', 'GET', 'userApi', '/../health'),
 ])
@@ -311,7 +299,7 @@ async function runSingle(item: TestItem) {
   item.errorMessage = ''
   item.httpStatus = ''
 
-  const inst = item.instance === 'userApi' ? api : item.instance === 'pluginApi' ? pluginApi : mainApi
+  const inst = item.instance === 'userApi' ? api : mainApi
   try {
     const resp = await inst.request({
       method: item.method,
@@ -360,7 +348,6 @@ interface RawTestItem {
 const rawTests = ref<RawTestItem[]>([
   { name: 'userApi /users', url: '/api/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'mainApi /plugin/verify-token', url: '/api/v1/plugin/verify-token', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
-  { name: 'pluginApi /allowed-actions', url: '/api-config/api/v1/plugin/allowed-actions?plugin_name=user-management', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Health Check', url: '/health', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Debug Env', url: '/debug-env', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
 ])
@@ -451,7 +438,6 @@ function makeProxyTest(name: string, url: string, expectedBackend: string): Prox
 
 const proxyTests = ref<ProxyTestItem[]>([
   makeProxyTest('/api/ → 后端 API', '/api/v1/plugin-user/users?page=1&pageSize=1', 'proxy_pass → API 后端'),
-  makeProxyTest('/api-config/ → 配置接口', '/api-config/api/v1/plugin/allowed-actions?plugin_name=user-management', 'proxy_pass → system-admin 配置后端'),
   makeProxyTest('/health → 健康检查', '/health', '本地 Nginx 直接返回'),
   makeProxyTest('/debug-env → 调试环境', '/debug-env', '本地 Nginx 静态文件'),
   makeProxyTest('/ → 前端静态文件', '/', '本地 Nginx try_files'),
@@ -552,17 +538,10 @@ onMounted(async () => {
       }
       const upstreams: string[] = []
       const apiUrls: string[] = []
-      const configUrls: string[] = []
       let i = 1
       while (data[`APP_API_${i}_URL`]) {
         apiUrls.push(data[`APP_API_${i}_URL`])
         upstreams.push(`APP_API_${i}_URL=${data[`APP_API_${i}_URL`]}`)
-        i++
-      }
-      i = 1
-      while (data[`APP_CONFIG_${i}_URL`]) {
-        configUrls.push(data[`APP_CONFIG_${i}_URL`])
-        upstreams.push(`APP_CONFIG_${i}_URL=${data[`APP_CONFIG_${i}_URL`]}`)
         i++
       }
       // 兜底：无序号变量
@@ -575,9 +554,9 @@ onMounted(async () => {
       envInfo.serverBuildTime = data.buildTime || ''
 
       proxyTests.value.forEach(t => {
-        const targetUrls = t.url.startsWith('/api-config/') ? configUrls : apiUrls
-        const matcher = t.url.startsWith('/api-config/') ? /^\/api-config/ : /^\/api/
-        if (!targetUrls.length || (!t.url.startsWith('/api/') && !t.url.startsWith('/api-config/'))) return
+        if (!apiUrls.length || !t.url.startsWith('/api/')) return
+        const targetUrls = apiUrls
+        const matcher = /^\/api/
         const backendPath = t.url.replace(matcher, '')
         t.expectedBackend = targetUrls.length === 1
           ? targetUrls[0].replace(/\/$/, '') + backendPath

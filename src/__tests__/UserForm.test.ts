@@ -140,7 +140,7 @@ describe('UserForm', () => {
     messageError.mockReset()
     messageSuccess.mockReset()
 
-    verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['admin'] } } })
+    verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['root'] } } })
     listOrganizations.mockResolvedValue({
       data: {
         code: 0,

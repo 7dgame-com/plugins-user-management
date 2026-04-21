@@ -14,8 +14,6 @@ server {
 
     # __API_LOCATIONS__
 
-    # __CONFIG_LOCATIONS__
-
     location /health {
         access_log off;
         default_type application/json;
