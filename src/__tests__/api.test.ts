@@ -76,8 +76,43 @@ describe('Preservation', () => {
     expect(vi.mocked(requestParentTokenRefresh)).not.toHaveBeenCalled()
   })
 
+  it('waits for the parent token before sending the first embedded request', async () => {
+    const tokenModule = await import('../utils/token')
+    vi.mocked(tokenModule.isInIframe).mockReturnValue(true)
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: 'parent-token' })
+
+    const { default: api } = await import('../api/index')
+
+    let callCount = 0
+    const originalAdapter = api.defaults.adapter
+    api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
+      callCount += 1
+      expect(config.headers.Authorization).toBe('Bearer parent-token')
+
+      return {
+        status: 200,
+        statusText: 'OK',
+        data: { ok: true },
+        headers: {},
+        config,
+      }
+    }
+
+    try {
+      const response = await api.get('/test-endpoint')
+
+      expect(response.data).toEqual({ ok: true })
+      expect(callCount).toBe(1)
+      expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalledTimes(1)
+      expect(localStorage.getItem('user-mgmt-token')).toBe('parent-token')
+    } finally {
+      api.defaults.adapter = originalAdapter
+    }
+  })
+
   it('401 + parent refresh succeeds: original request is retried transparently', async () => {
     const tokenModule = await import('../utils/token')
+    localStorage.setItem('user-mgmt-token', 'old-token')
     vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: 'new-token' })
     const { default: api } = await import('../api/index')
 
@@ -86,11 +121,13 @@ describe('Preservation', () => {
     api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
       callCount++
       if (callCount === 1) {
+        expect(config.headers.Authorization).toBe('Bearer old-token')
         throw Object.assign(new Error('Unauthorized'), {
           response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
           config, isAxiosError: true,
         })
       }
+      expect(config.headers.Authorization).toBe('Bearer new-token')
       return { status: 200, statusText: 'OK', data: { success: true }, headers: {}, config }
     }
 

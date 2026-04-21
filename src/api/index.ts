@@ -32,6 +32,7 @@ let failedQueue: Array<{
   resolve: (token: string) => void
   reject: (error: Error) => void
 }> = []
+let bootstrapTokenPromise: Promise<string | null> | null = null
 
 function processQueue(error: Error | null, token: string | null) {
   failedQueue.forEach(({ resolve, reject }) => {
@@ -74,13 +75,38 @@ async function tryRefreshToken(): Promise<string | null> {
   }
 }
 
+async function getRequestToken(): Promise<string | null> {
+  const token = getToken()
+  if (token) return token
+
+  if (!isInIframe()) {
+    return null
+  }
+
+  if (!bootstrapTokenPromise) {
+    bootstrapTokenPromise = requestParentTokenRefresh()
+      .then((result) => {
+        const accessToken = result?.accessToken ?? getToken()
+        if (accessToken) {
+          setToken(accessToken)
+        }
+        return accessToken
+      })
+      .finally(() => {
+        bootstrapTokenPromise = null
+      })
+  }
+
+  return bootstrapTokenPromise
+}
+
 /**
  * 为 axios 实例添加请求/响应拦截器
  */
 function setupInterceptors(instance: ReturnType<typeof axios.create>) {
   // Request: 注入 Authorization header
-  instance.interceptors.request.use((config) => {
-    const token = getToken()
+  instance.interceptors.request.use(async (config) => {
+    const token = await getRequestToken()
     if (token) config.headers.Authorization = `Bearer ${token}`
     return config
   })
