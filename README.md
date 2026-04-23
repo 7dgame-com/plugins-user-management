@@ -15,7 +15,7 @@
 
 ```
 浏览器 → nginx (port 80)
-  ├── /api/*  → 主后端 API（${API_UPSTREAM}）
+  ├── /api/*  → 主后端 API（APP_API_N_URL）
   └── /*      → SPA 静态文件
 ```
 
@@ -58,7 +58,7 @@ cd driver && docker-compose up -d
 # 构建并启动插件
 cd plugins/user-management
 docker build -t user-management .
-docker run -p 3003:80 -e API_UPSTREAM=http://xrugc-api:80 user-management
+docker run -p 3003:80 -e APP_API_1_URL=http://xrugc-api:80 user-management
 ```
 
 或通过 `driver/docker-compose.yml` 统一编排：
@@ -69,7 +69,7 @@ xrugc-user-management:
   ports:
     - "3003:80"
   environment:
-    - API_UPSTREAM=http://xrugc-api:80
+    - APP_API_1_URL=http://xrugc-api:80
   networks:
     - xrugc-network
 ```
@@ -78,7 +78,7 @@ xrugc-user-management:
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `API_UPSTREAM` | 主后端 API 地址（nginx 反向代理目标） | `http://xrugc-api:80`（Docker 内部）或 `https://api.xrugc.com`（生产） |
+| `APP_API_1_URL` / `APP_API_N_URL` | 主后端 API 上游地址，支持按序号配置多个后端 | `http://xrugc-api:80`（Docker 内部）或 `https://api.xrugc.com`（生产） |
 
 ## API
 

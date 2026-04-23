@@ -37,4 +37,12 @@ describe('user-management auth-session routing semantics', () => {
     expect(entrypoint).not.toContain('APP_CONFIG_${i}_URL')
     expect(nginxTemplate).not.toContain('# __CONFIG_LOCATIONS__')
   })
+
+  it('formats debug-env JSON with a conditional upstream comma', () => {
+    const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
+
+    expect(entrypoint).toContain('DEBUG_LIST="${API_LIST}"')
+    expect(entrypoint).toContain('${DEBUG_LIST}${DEBUG_LIST:+, }')
+    expect(entrypoint).not.toContain('  ${API_LIST},')
+  })
 })
