@@ -13,7 +13,14 @@
         @submit.prevent="handleSubmit"
       >
         <el-form-item :label="t('user.username')" prop="username">
-          <el-input v-model="form.username" :placeholder="t('user.usernamePlaceholder')" />
+          <el-input
+            v-model="form.username"
+            :placeholder="t('user.usernamePlaceholder')"
+            :disabled="isEdit"
+          />
+        </el-form-item>
+        <el-form-item :label="t('user.nickname')">
+          <el-input v-model="form.nickname" />
         </el-form-item>
         <el-form-item :label="t('user.email')" prop="email">
           <el-input v-model="form.email" :placeholder="t('user.emailPlaceholder')" />
@@ -42,6 +49,28 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('organization.userOrganizations')">
+          <el-select
+            v-model="form.organization_ids"
+            multiple
+            filterable
+            clearable
+            style="width: 100%"
+            :loading="organizationsLoading"
+            :disabled="organizationsLoading || !!organizationsError"
+            data-testid="organization-select"
+          >
+            <el-option
+              v-for="organization in organizations"
+              :key="organization.id"
+              :label="organization.title"
+              :value="organization.id"
+            />
+          </el-select>
+          <div v-if="organizationsError" class="form-hint form-hint-error">
+            {{ organizationsError }}
+          </div>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" native-type="submit">
             {{ isEdit ? t('user.saveChanges') : t('user.createUser') }}
@@ -58,7 +87,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { pluginApi } from '../api'
+import api, { listOrganizations, type OrganizationItem, verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -71,6 +100,9 @@ const route = useRoute()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const organizations = ref<OrganizationItem[]>([])
+const organizationsLoading = ref(false)
+const organizationsError = ref('')
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -79,10 +111,12 @@ const originalRole = ref('')
 
 const form = reactive({
   username: '',
+  nickname: '',
   email: '',
   password: '',
   status: 10,
   role: '',
+  organization_ids: [] as number[],
 })
 
 function getRoleLevel(roles?: string[]): number {
@@ -98,7 +132,7 @@ function getHighestRole(roles?: string[]): string {
 const availableRoleOptions = computed(() => {
   const myLevel = getRoleLevel(currentUserRoles.value)
   return Object.entries(ROLE_PRIORITY)
-    .filter(([, level]) => level <= myLevel)
+    .filter(([role, level]) => level <= myLevel && role !== 'root')
     .sort(([, a], [, b]) => b - a)
     .map(([role]) => ({ value: role, label: t(`user.roles.${role}`) }))
 })
@@ -120,9 +154,7 @@ const rules = computed(() => ({
 
 async function fetchCurrentUser() {
   try {
-    const { data } = await pluginApi.get('/verify-token', {
-      params: { plugin_name: 'user-management' }
-    })
+    const { data } = await verifyCurrentToken()
     currentUserRoles.value = data.data?.roles || []
   } catch {
     // silent
@@ -134,34 +166,76 @@ async function loadUser() {
   try {
     const { data } = await api.get('/users', { params: { id: route.params.id } })
     const user = data.data
+    // 根用户不允许编辑
+    if (Array.isArray(user.roles) && user.roles.includes('root')) {
+      ElMessage.error(t('user.messages.rootUserProtected', '根用户不允许修改'))
+      router.replace('/users')
+      return
+    }
     form.username = user.username
+    form.nickname = user.nickname || ''
     form.email = user.email || ''
     form.status = user.status
     const highest = getHighestRole(user.roles)
     form.role = highest
     originalRole.value = highest
+    form.organization_ids = Array.isArray(user.organizations)
+      ? user.organizations.map((organization: { id: number }) => organization.id)
+      : []
   } catch {
     ElMessage.error(t('user.messages.loadFailed'))
     router.back()
   }
 }
 
+async function loadOrganizations() {
+  organizationsLoading.value = true
+  organizationsError.value = ''
+  try {
+    const { data } = await listOrganizations()
+    if (data.code === 0 && Array.isArray(data.data)) {
+      organizations.value = data.data
+      return
+    }
+
+    organizations.value = []
+    organizationsError.value = t('organization.messages.selectorLoadFailed')
+    ElMessage.error(organizationsError.value)
+  } catch {
+    organizations.value = []
+    organizationsError.value = t('organization.messages.selectorLoadFailed')
+    ElMessage.error(organizationsError.value)
+  } finally {
+    organizationsLoading.value = false
+  }
+}
+
 async function handleSubmit() {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  if (formRef.value) {
+    const valid = await formRef.value.validate().catch(() => false)
+    if (!valid) return
+  }
   loading.value = true
   try {
     const payload: any = {
-      username: form.username,
+      nickname: form.nickname,
       email: form.email,
       status: form.status
     }
+    if (!isEdit.value) payload.username = form.username
     if (form.password) payload.password = form.password
+    if (!isEdit.value || !organizationsError.value) {
+      payload.organization_ids = [...form.organization_ids]
+    }
 
     if (isEdit.value) {
       await api.post('/update-user', { id: route.params.id, ...payload })
       // If role changed, update separately
       if (canEditRole.value && form.role && form.role !== originalRole.value) {
+        if (form.role === 'root') {
+          ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
+          return
+        }
         await api.post('/change-role', { id: route.params.id, role: form.role })
       }
       ElMessage.success(t('user.messages.updateSuccess'))
@@ -179,6 +253,7 @@ async function handleSubmit() {
 
 onMounted(() => {
   fetchCurrentUser()
+  loadOrganizations()
   loadUser()
 })
 </script>
@@ -201,5 +276,14 @@ onMounted(() => {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   color: var(--text-primary);
+}
+
+.form-hint {
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.form-hint-error {
+  color: var(--danger-color, #f56c6c);
 }
 </style>

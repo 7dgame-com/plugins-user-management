@@ -15,6 +15,18 @@ function initFromUrl() {
   }
 }
 
+/** 从 INIT config 中读取主题（URL 参数优先） */
+export function setThemeFromConfig(config: Record<string, unknown>) {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('theme')) return // URL 参数优先
+
+  const theme = config.theme as string | undefined
+  if (theme) {
+    themeName.value = theme
+    isDark.value = DARK_THEMES.includes(theme)
+  }
+}
+
 /** 监听主框架的主题切换消息 */
 function listenForThemeChange() {
   window.addEventListener('message', (event) => {

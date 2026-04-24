@@ -1,6 +1,10 @@
 export default {
+  pluginMeta: {
+    name: 'การจัดการผู้ใช้',
+    description: 'เครื่องมือจัดการผู้ใช้ CRUD',
+    groupName: 'เครื่องมือ',
+  },
   common: {
-    search: 'ค้นหา',
     add: 'เพิ่ม',
     edit: 'แก้ไข',
     delete: 'ลบ',
@@ -134,8 +138,25 @@ export default {
       inviteCodeRequired: 'กรุณากรอกรหัสคำเชิญ',
     },
   },
+  organization: {
+    title: 'การจัดการองค์กร',
+    addTitle: 'เพิ่มองค์กร',
+    editTitle: 'แก้ไของค์กร',
+    organizationTitle: 'ชื่อองค์กร',
+    organizationName: 'คีย์องค์กร',
+    userOrganizations: 'องค์กรที่สังกัด',
+    organizationTitlePlaceholder: 'กรุณากรอกชื่อองค์กร',
+    organizationNamePlaceholder: 'กรุณากรอกคีย์องค์กร',
+    messages: {
+      loadFailed: 'ไม่สามารถโหลดรายการองค์กร',
+      titleRequired: 'กรุณากรอกชื่อองค์กร',
+      nameRequired: 'กรุณากรอกคีย์องค์กร',
+      selectorLoadFailed: 'โหลดรายการองค์กรไม่สำเร็จ จึงยังไม่สามารถแก้ไของค์กรที่สังกัดได้ในขณะนี้',
+    },
+  },
   layout: {
     waitingAuth: 'กำลังรอการอนุญาต...',
     requireMainSystem: 'กรุณาเปิดปลั๊กอินนี้จากระบบหลัก',
+    noToken: 'ไม่สามารถเปิดอินเทอร์เฟซได้ กรุณาเข้าสู่ระบบจากระบบหลักแล้วลองอีกครั้ง',
   },
 }

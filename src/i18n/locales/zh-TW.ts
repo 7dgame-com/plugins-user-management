@@ -1,6 +1,10 @@
 export default {
+  pluginMeta: {
+    name: '用戶管理',
+    description: '用戶增删改查管理工具',
+    groupName: '實用工具',
+  },
   common: {
-    search: '搜尋',
     add: '新增',
     edit: '編輯',
     delete: '刪除',
@@ -133,8 +137,25 @@ export default {
       inviteCodeRequired: '請輸入邀請碼',
     },
   },
+  organization: {
+    title: '組織管理',
+    addTitle: '新增組織',
+    editTitle: '編輯組織',
+    organizationTitle: '組織名稱',
+    organizationName: '組織標識',
+    userOrganizations: '所屬組織',
+    organizationTitlePlaceholder: '請輸入組織名稱',
+    organizationNamePlaceholder: '請輸入組織標識',
+    messages: {
+      loadFailed: '取得組織清單失敗',
+      titleRequired: '請輸入組織名稱',
+      nameRequired: '請輸入組織標識',
+      selectorLoadFailed: '組織清單載入失敗，當前無法修改所屬組織',
+    },
+  },
   layout: {
     waitingAuth: '等待主系統授權...',
     requireMainSystem: '請從主系統開啟此外掛',
+    noToken: '無法開啟介面，請從主系統登入後重試',
   },
 }

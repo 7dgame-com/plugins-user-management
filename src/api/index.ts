@@ -5,22 +5,24 @@ import {
   setToken,
   removeAllTokens,
   isInIframe,
-  requestParentTokenRefresh
+  requestParentTokenRefresh,
+  getRefreshToken,
+  setRefreshToken
 } from '../utils/token'
 
 /**
- * 用户管理接口（指向主后端 /v1/plugin-user）
+ * 用户管理接口（指向主后端 /api/v1/plugin-user）
  */
 const userApi = axios.create({
-  baseURL: '/v1/plugin-user',
+  baseURL: '/api/v1/plugin-user',
   timeout: 10000
 })
 
 /**
- * 通用插件接口（指向主后端 /v1/plugin，如 verify-token、allowed-actions）
+ * 主后端接口（指向主系统 /api/v1）
  */
-const pluginApi = axios.create({
-  baseURL: '/v1/plugin',
+const mainApi = axios.create({
+  baseURL: '/api/v1',
   timeout: 10000
 })
 
@@ -30,6 +32,7 @@ let failedQueue: Array<{
   resolve: (token: string) => void
   reject: (error: Error) => void
 }> = []
+let bootstrapTokenPromise: Promise<string | null> | null = null
 
 function processQueue(error: Error | null, token: string | null) {
   failedQueue.forEach(({ resolve, reject }) => {
@@ -43,19 +46,78 @@ function processQueue(error: Error | null, token: string | null) {
 }
 
 /**
+ * 两段式 token 刷新：
+ * 1. iframe 模式下先请求主框架刷新
+ * 2. 主框架超时后回退到本地 refresh token
+ * 两段均失败才返回 null，由上层触发 TOKEN_EXPIRED
+ */
+async function tryRefreshToken(): Promise<string | null> {
+  if (isInIframe()) {
+    const result = await requestParentTokenRefresh()
+    if (result?.accessToken) {
+      setToken(result.accessToken)
+      return result.accessToken
+    }
+    // 主框架超时，回退到本地刷新
+  }
+
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return null
+
+  try {
+    const res = await axios.post('/api/auth/refresh', { refreshToken })
+    const { accessToken, refreshToken: newRefreshToken } = res.data
+    setToken(accessToken)
+    if (newRefreshToken) setRefreshToken(newRefreshToken)
+    return accessToken
+  } catch {
+    return null
+  }
+}
+
+async function getRequestToken(): Promise<string | null> {
+  const token = getToken()
+  if (token) return token
+
+  if (!isInIframe()) {
+    return null
+  }
+
+  if (!bootstrapTokenPromise) {
+    bootstrapTokenPromise = requestParentTokenRefresh()
+      .then((result) => {
+        const accessToken = result?.accessToken ?? getToken()
+        if (accessToken) {
+          setToken(accessToken)
+        }
+        return accessToken
+      })
+      .finally(() => {
+        bootstrapTokenPromise = null
+      })
+  }
+
+  return bootstrapTokenPromise
+}
+
+/**
  * 为 axios 实例添加请求/响应拦截器
  */
 function setupInterceptors(instance: ReturnType<typeof axios.create>) {
   // Request: 注入 Authorization header
-  instance.interceptors.request.use((config) => {
-    const token = getToken()
+  instance.interceptors.request.use(async (config) => {
+    const token = await getRequestToken()
     if (token) config.headers.Authorization = `Bearer ${token}`
     return config
   })
 
-  // Response: 处理 401 刷新
+  // Response: 提取 x-refresh-token 响应头 + 处理 401 刷新
   instance.interceptors.response.use(
-    (res) => res,
+    (res) => {
+      const refreshToken = res.headers['x-refresh-token']
+      if (refreshToken) setRefreshToken(refreshToken)
+      return res
+    },
     async (err: AxiosError) => {
       const originalRequest = err.config as InternalAxiosRequestConfig & {
         _retry?: boolean
@@ -79,20 +141,14 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
       isRefreshing = true
 
       try {
-        let result: { accessToken: string } | null = null
+        const newToken = await tryRefreshToken()
 
-        if (isInIframe()) {
-          result = await requestParentTokenRefresh()
-        }
-
-        if (!result || !result.accessToken) {
+        if (!newToken) {
           throw new Error('Token refresh failed')
         }
 
-        setToken(result.accessToken)
-        processQueue(null, result.accessToken)
-
-        originalRequest.headers.Authorization = `Bearer ${result.accessToken}`
+        processQueue(null, newToken)
+        originalRequest.headers.Authorization = `Bearer ${newToken}`
         return instance(originalRequest)
       } catch (refreshError) {
         removeAllTokens()
@@ -117,8 +173,100 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
 }
 
 setupInterceptors(userApi)
-setupInterceptors(pluginApi)
+setupInterceptors(mainApi)
 
-// 默认导出 userApi（用户管理接口），同时具名导出 pluginApi
+// 默认导出 userApi（用户管理接口），同时具名导出 mainApi
 export default userApi
-export { pluginApi }
+export { mainApi }
+
+export interface VerifyTokenResponse {
+  code: number
+  message?: string
+  data: {
+    id: number
+    username?: string
+    nickname?: string
+    roles?: string[]
+  }
+}
+
+/**
+ * 当前用户 token 校验始终由主后端提供。
+ */
+export function verifyCurrentToken(): Promise<{ data: VerifyTokenResponse }> {
+  return mainApi.get('/plugin/verify-token')
+}
+
+// --- Batch Create Users API ---
+
+export interface BatchCreateUserItem {
+  username: string
+  nickname: string
+  password: string
+  role: string
+  status: number
+}
+
+export interface BatchCreatePayload {
+  users: BatchCreateUserItem[]
+  organization_ids?: number[]
+}
+
+export interface BatchCreateResultItem {
+  index: number
+  username: string
+  success: boolean
+  id?: number
+  error?: string
+}
+
+export interface BatchCreateResult {
+  code: number
+  data: {
+    total: number
+    success: number
+    failed: number
+    results: BatchCreateResultItem[]
+  }
+}
+
+export function batchCreateUsers(payload: BatchCreatePayload): Promise<{ data: BatchCreateResult }> {
+  return userApi.post('/batch-create-users', payload, {
+    // Batch creation is intentionally long-running for larger user sets.
+    // Keep this request from inheriting the generic 10s timeout and
+    // incorrectly surfacing a failure after the server already completed.
+    timeout: 0,
+  })
+}
+
+export interface OrganizationItem {
+  id: number
+  title: string
+  name: string
+}
+
+export interface OrganizationListResponse {
+  code: number
+  data: OrganizationItem[]
+}
+
+export interface OrganizationDetailResponse {
+  code: number
+  data: OrganizationItem
+}
+
+export function listOrganizations(): Promise<{ data: OrganizationListResponse }> {
+  return mainApi.get('/organization/list')
+}
+
+export function createOrganization(
+  payload: Pick<OrganizationItem, 'title' | 'name'>
+): Promise<{ data: OrganizationDetailResponse }> {
+  return mainApi.post('/organization/create', payload)
+}
+
+export function updateOrganization(
+  payload: Pick<OrganizationItem, 'id' | 'title'>
+): Promise<{ data: OrganizationDetailResponse }> {
+  return mainApi.post('/organization/update', payload)
+}

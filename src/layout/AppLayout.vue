@@ -11,7 +11,7 @@
     <aside v-if="hasAny()" class="sidebar" :class="{ open: sidebarOpen }">
       <div class="sidebar-header">
         <span class="sidebar-title">用户管理</span>
-        <button class="sidebar-close" @click="sidebarOpen = false">
+        <button class="sidebar-close" aria-label="收起侧边栏" @click="sidebarOpen = false">
           <el-icon><Close /></el-icon>
         </button>
       </div>
@@ -37,6 +37,16 @@
           <span>添加用户</span>
         </router-link>
         <router-link
+          v-if="can('create-user')"
+          to="/users/batch-create"
+          class="sidebar-item"
+          :class="{ active: $route.path === '/users/batch-create' }"
+          @click="sidebarOpen = false"
+        >
+          <el-icon><DocumentCopy /></el-icon>
+          <span>批量创建</span>
+        </router-link>
+        <router-link
           v-if="can('manage-invitations')"
           to="/invitations"
           class="sidebar-item"
@@ -46,14 +56,30 @@
           <el-icon><Link /></el-icon>
           <span>邀请管理</span>
         </router-link>
+        <router-link
+          v-if="can('manage-organizations')"
+          to="/organizations"
+          class="sidebar-item"
+          :class="{ active: $route.path === '/organizations' }"
+          @click="sidebarOpen = false"
+        >
+          <el-icon><OfficeBuilding /></el-icon>
+          <span>{{ t('organization.title') }}</span>
+        </router-link>
       </nav>
     </aside>
 
     <!-- 主内容区 -->
     <div class="main-area">
       <header class="navbar">
-        <button v-if="hasAny()" class="menu-btn" @click="sidebarOpen = true">
-          <el-icon :size="20"><Fold /></el-icon>
+        <button
+          v-if="hasAny()"
+          class="menu-btn"
+          aria-label="展开侧边栏"
+          title="展开侧边栏"
+          @click="sidebarOpen = true"
+        >
+          <el-icon :size="18"><Expand /></el-icon>
         </button>
         <h1 class="navbar-title">{{ $route.meta.title || '用户管理' }}</h1>
         <div class="navbar-spacer" />
@@ -64,8 +90,11 @@
         </div>
       </header>
       <main class="content">
-        <div v-if="loaded && !hasAny()" class="no-permission">
-          <el-empty description="您没有此插件的任何操作权限，请联系管理员配置" />
+        <div v-if="!ready" class="loading-state">
+          <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+        </div>
+        <div v-else-if="loaded && !hasAny()" class="no-permission">
+          <el-empty description="此插件目前仅对 root 用户开放" />
         </div>
         <router-view v-else />
       </main>
@@ -74,25 +103,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Close, User, Plus, Fold, Link } from '@element-plus/icons-vue'
-import api from '../api'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Close, User, Plus, Link, DocumentCopy, Loading, OfficeBuilding, Expand } from '@element-plus/icons-vue'
+import { useAuthSession } from '../composables/useAuthSession'
 import { usePermissions } from '../composables/usePermissions'
 
+const { t } = useI18n()
+const { user } = useAuthSession()
 const { fetchPermissions, can, hasAny, loaded } = usePermissions()
 
 const sidebarOpen = ref(false)
-const userInfo = ref<{ id: number; username: string; nickname: string; roles: string[] } | null>(null)
+const userInfo = computed(() => user.value)
+const ready = ref(false)
 
 onMounted(async () => {
   try {
-    const [{ data }] = await Promise.all([
-      api.get('/me'),
-      fetchPermissions(),
-    ])
-    userInfo.value = data
+    await fetchPermissions()
   } catch {
     // 静默失败，不影响页面使用
+  } finally {
+    ready.value = true
   }
 })
 </script>
@@ -101,6 +132,10 @@ onMounted(async () => {
 .app-layout {
   min-height: 100vh;
   background: var(--bg-page);
+}
+
+.main-area {
+  min-height: 100vh;
 }
 
 .sidebar-overlay {
@@ -207,20 +242,23 @@ onMounted(async () => {
 }
 
 .menu-btn {
-  background: none;
-  border: none;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   cursor: pointer;
   color: var(--text-secondary);
   padding: var(--spacing-sm);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   transition: all var(--transition-fast);
   display: flex;
   align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
 }
 
 .menu-btn:hover {
   background: var(--bg-hover);
   color: var(--primary-color);
+  border-color: var(--border-color-hover);
 }
 
 .navbar-title {
@@ -243,5 +281,19 @@ onMounted(async () => {
 
 .content {
   padding: var(--spacing-lg);
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+}
+
+@media (min-width: 1024px) {
+  .content {
+    padding: var(--spacing-xl);
+  }
 }
 </style>

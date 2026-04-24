@@ -18,11 +18,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.TENCENT_REGISTRY_USER }}
-          password: ${{ secrets.TENCENT_REGISTRY_PASSWORD }}
+      - name: Log in to Container Registry with retry
+        env:
+          TENCENT_REGISTRY_USER: ${{ secrets.TENCENT_REGISTRY_USER }}
+          TENCENT_REGISTRY_PASSWORD: ${{ secrets.TENCENT_REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          max_attempts=5
+          attempt=1
+
+          while [ "$attempt" -le "$max_attempts" ]; do
+            if printf '%s' "$TENCENT_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$TENCENT_REGISTRY_USER" --password-stdin; then
+              echo "Docker login succeeded on attempt ${attempt}/${max_attempts}."
+              exit 0
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "Docker login failed after ${max_attempts} attempts."
+              exit 1
+            fi
+
+            sleep_seconds=$((attempt * 10))
+            echo "Docker login failed on attempt ${attempt}/${max_attempts}. Retrying in ${sleep_seconds}s..."
+            docker logout "$REGISTRY" || true
+            sleep "$sleep_seconds"
+            attempt=$((attempt + 1))
+          done
 
       - uses: docker/metadata-action@v5
         id: meta

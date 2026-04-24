@@ -18,6 +18,9 @@
         <el-icon><Plus /></el-icon>
         {{ t('user.addUser') }}
       </el-button>
+      <el-button v-if="can('create-user')" @click="$router.push('/users/batch-create')">
+        {{ t('user.batch.title') }}
+      </el-button>
     </div>
 
     <!-- 用户表格 -->
@@ -27,10 +30,27 @@
         <el-table-column prop="username" :label="t('user.username')" min-width="140" sortable="custom" />
         <el-table-column prop="nickname" :label="t('user.nickname')" min-width="140" sortable="custom" />
         <el-table-column prop="email" :label="t('user.email')" min-width="200" sortable="custom" />
+        <el-table-column prop="organizations" :label="t('organization.userOrganizations')" min-width="220">
+          <template #default="{ row }">
+            <div
+              v-if="Array.isArray(row.organizations) && row.organizations.length > 0"
+              class="organization-list"
+            >
+              <span
+                v-for="organization in row.organizations"
+                :key="organization.id"
+                class="organization-chip"
+              >
+                {{ organization.title }}
+              </span>
+            </div>
+            <span v-else class="organization-empty">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="roles" :label="t('user.role')" width="160" sortable="custom">
           <template #default="{ row }">
             <el-select
-              v-if="can('change-role') && canChangeRole(row)"
+              v-if="can('change-role') && canChangeRole(row) && !isRootUser(row)"
               :model-value="getHighestRole(row.roles)"
               size="small"
               @change="(val: string) => handleRoleChange(row, val)"
@@ -53,14 +73,21 @@
         </el-table-column>
         <el-table-column v-if="can('update-user') || can('delete-user')" :label="t('common.actions')" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="can('update-user')" link type="primary" @click="$router.push(`/users/${row.id}/edit`)">
-              {{ t('common.edit') }}
-            </el-button>
-            <el-popconfirm v-if="can('delete-user')" :title="t('user.deleteConfirm')" @confirm="handleDelete(row.id)">
-              <template #reference>
-                <el-button link type="danger">{{ t('common.delete') }}</el-button>
-              </template>
-            </el-popconfirm>
+            <template v-if="isRootUser(row)">
+              <el-tooltip content="根用户不可操作" placement="top">
+                <span style="color: #c0c4cc; font-size: 13px; cursor: not-allowed">受保护</span>
+              </el-tooltip>
+            </template>
+            <template v-else>
+              <el-button v-if="can('update-user')" link type="primary" @click="$router.push(`/users/${row.id}/edit`)">
+                {{ t('common.edit') }}
+              </el-button>
+              <el-popconfirm v-if="can('delete-user')" :title="t('user.deleteConfirm')" @confirm="handleDelete(row.id)">
+                <template #reference>
+                  <el-button link type="danger">{{ t('common.delete') }}</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -85,7 +112,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Search, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { pluginApi } from '../api'
+import api, { verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -126,19 +153,21 @@ function canChangeRole(row: any): boolean {
   return targetLevel <= myLevel
 }
 
+function isRootUser(row: any): boolean {
+  return Array.isArray(row.roles) && row.roles.includes('root')
+}
+
 const availableRoleOptions = computed(() => {
   const myLevel = getRoleLevel(currentUserRoles.value)
   return Object.entries(ROLE_PRIORITY)
-    .filter(([, level]) => level <= myLevel)
+    .filter(([role, level]) => level <= myLevel && role !== 'root')
     .sort(([, a], [, b]) => b - a)
     .map(([role]) => ({ value: role, label: t(`user.roles.${role}`) }))
 })
 
 async function fetchCurrentUser() {
   try {
-    const { data } = await pluginApi.get('/verify-token', {
-      params: { plugin_name: 'user-management' }
-    })
+    const { data } = await verifyCurrentToken()
     currentUserRoles.value = data.data?.roles || []
   } catch {
     // silent
@@ -166,6 +195,10 @@ async function fetchUsers() {
 }
 
 async function handleRoleChange(row: any, newRole: string) {
+  if (newRole === 'root') {
+    ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
+    return
+  }
   try {
     await api.post('/change-role', { id: row.id, role: newRole })
     ElMessage.success(t('user.messages.roleChangeSuccess'))
@@ -224,5 +257,26 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   border-top: 1px solid var(--border-color);
+}
+
+.organization-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.organization-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle, #f4f7fb);
+  color: var(--text-secondary, #606266);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.organization-empty {
+  color: var(--text-muted, #909399);
 }
 </style>

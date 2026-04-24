@@ -1,5 +1,5 @@
-import { ref, readonly } from 'vue'
-import api, { pluginApi } from '../api'
+import { computed, readonly } from 'vue'
+import { useAuthSession } from './useAuthSession'
 
 export interface Permissions {
   'list-users': boolean
@@ -9,46 +9,34 @@ export interface Permissions {
   'delete-user': boolean
   'change-role': boolean
   'manage-invitations': boolean
+  'manage-organizations': boolean
 }
 
-const permissions = ref<Permissions>({
-  'list-users': false,
-  'view-user': false,
-  'create-user': false,
-  'update-user': false,
-  'delete-user': false,
-  'change-role': false,
-  'manage-invitations': false,
-})
-
-const loaded = ref(false)
-const loading = ref(false)
+const ALL_ACTIONS: (keyof Permissions)[] = [
+  'list-users',
+  'view-user',
+  'create-user',
+  'update-user',
+  'delete-user',
+  'change-role',
+  'manage-invitations',
+  'manage-organizations',
+]
 
 export function usePermissions() {
-  async function fetchPermissions() {
-    if (loaded.value || loading.value) return
-    loading.value = true
-    try {
-      const { data } = await pluginApi.get('/allowed-actions', {
-        params: { plugin_name: 'user-management' }
-      })
-      if (data.code === 0) {
-        const allowedActions: string[] = data.data?.actions || []
-        const allActions: (keyof Permissions)[] = [
-          'list-users', 'view-user', 'create-user', 'update-user',
-          'delete-user', 'change-role', 'manage-invitations'
-        ]
-        const hasWildcard = allowedActions.includes('*')
-        allActions.forEach((a) => {
-          permissions.value[a] = hasWildcard || allowedActions.includes(a)
-        })
-      }
-      loaded.value = true
-    } catch {
-      // 权限获取失败时保持默认（全部 false）
-    } finally {
-      loading.value = false
-    }
+  const { user, loaded, loading, hasRootAccess, fetchSession } = useAuthSession()
+
+  const permissions = computed<Permissions>(() => {
+    const allowed = loaded.value && hasRootAccess.value
+
+    return ALL_ACTIONS.reduce((result, action) => {
+      result[action] = allowed
+      return result
+    }, {} as Permissions)
+  })
+
+  async function fetchPermissions(force = false) {
+    await fetchSession(force)
   }
 
   function can(action: keyof Permissions): boolean {
@@ -60,6 +48,7 @@ export function usePermissions() {
   }
 
   return {
+    user: readonly(user),
     permissions: readonly(permissions),
     loaded: readonly(loaded),
     loading: readonly(loading),
