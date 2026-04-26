@@ -55,4 +55,24 @@ describe('Preservation', () => {
 
     expect(invitationRoute?.meta.requiresPermission).toBe('manage-invitations')
   })
+
+  it('sends plugin-url-changed events after route changes', async () => {
+    mockCan.mockReturnValue(true)
+    const postMessageSpy = vi
+      .spyOn(window.parent, 'postMessage')
+      .mockImplementation(() => undefined)
+
+    await router.push('/organizations?tab=members#top')
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'EVENT',
+        payload: {
+          event: 'plugin-url-changed',
+          pluginUrl: '/organizations?tab=members#top',
+        },
+      }),
+      '*'
+    )
+  })
 })
