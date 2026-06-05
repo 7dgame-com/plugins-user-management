@@ -65,8 +65,15 @@ async function tryRefreshToken(): Promise<string | null> {
   if (!refreshToken) return null
 
   try {
-    const res = await axios.post('/api/auth/refresh', { refreshToken })
-    const { accessToken, refreshToken: newRefreshToken } = res.data
+    const res = await axios.post('/api/v1/auth/refresh', { refreshToken })
+    const tokenPayload = res.data?.token ?? res.data
+    const accessToken = tokenPayload?.accessToken ?? tokenPayload?.token
+    const newRefreshToken = tokenPayload?.refreshToken
+
+    if (!accessToken) {
+      return null
+    }
+
     setToken(accessToken)
     if (newRefreshToken) setRefreshToken(newRefreshToken)
     return accessToken
