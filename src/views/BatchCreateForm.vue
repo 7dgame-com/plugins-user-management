@@ -27,6 +27,7 @@
         </el-form-item>
         <el-form-item :label="t('user.batch.password')" prop="password">
           <el-input v-model="form.password" type="password" show-password :placeholder="t('user.batch.passwordPlaceholder')" />
+          <div class="form-hint">{{ t('user.batch.passwordPolicyHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('user.batch.role')" prop="role">
           <el-select v-model="form.role" style="width: 100%">
@@ -96,6 +97,12 @@
         <el-alert v-if="resultData && resultData.failed === 0" type="success" :closable="false" show-icon>
           {{ t('user.batch.resultAllSuccess') }}
         </el-alert>
+        <el-alert v-else-if="resultData && resultData.success === 0" type="error" :closable="false" show-icon>
+          {{ t('user.batch.resultAllFailed') }}
+        </el-alert>
+        <el-alert v-else-if="resultData && resultData.failed > 0" type="warning" :closable="false" show-icon>
+          {{ t('user.batch.resultPartialFailed') }}
+        </el-alert>
         <div v-if="resultData" class="result-summary">
           <el-tag type="success">{{ t('user.batch.resultSuccess', { n: resultData.success }) }}</el-tag>
           <el-tag v-if="resultData.failed > 0" type="danger">{{ t('user.batch.resultFailed', { n: resultData.failed }) }}</el-tag>
@@ -150,6 +157,40 @@ const form = reactive({
   status: 10,
   organization_ids: [] as number[],
 })
+
+const WEAK_PASSWORDS = new Set([
+  'password',
+  'password123',
+  'password123!',
+  'password1234',
+  'password1234!',
+  'admin123456!',
+  'qwerty123!',
+  'qwerty123456!',
+  'abc123456789!',
+  'welcome12345!',
+  'changeme1234!',
+  'letmein12345!',
+  'master123456!',
+  'dragon123456!',
+  'monkey123456!',
+  'shadow123456!',
+  'sunshine12345',
+  'princess1234!',
+  'football1234!',
+  'charlie12345!',
+  'passw0rd1234!',
+  'iloveyou1234!',
+  'trustno12345!',
+  '123456789aa!',
+  'abcdef123456!',
+  'qwerty!@#$12',
+  'admin!@#$1234',
+  'p@ssw0rd1234',
+  'p@$$w0rd1234',
+  'test12345678!',
+  'hello1234567!',
+])
 
 // --- Template parsing ---
 
@@ -230,10 +271,76 @@ const rules = computed(() => ({
   nicknameTemplate: [{ required: true, message: t('user.batch.validation.nicknameTemplateRequired'), trigger: 'blur' }],
   password: [
     { required: true, message: t('user.batch.validation.passwordRequired'), trigger: 'blur' },
-    { min: 6, message: t('user.batch.validation.passwordMinLength'), trigger: 'blur' },
+    { validator: validatePasswordRule, trigger: 'blur' },
   ],
   role: [{ required: true, message: t('user.batch.validation.roleRequired'), trigger: 'change' }],
 }))
+
+function countPasswordCategories(password: string): number {
+  return [
+    /[A-Z]/.test(password),
+    /[a-z]/.test(password),
+    /\d/.test(password),
+    /[\W_]/.test(password),
+  ].filter(Boolean).length
+}
+
+function normalizeAccountIdentifiers(usernames: string[]): string[] {
+  return Array.from(new Set(
+    usernames
+      .map((username) => username.trim().toLowerCase())
+      .filter((username) => username.length >= 3)
+  ))
+}
+
+function getPasswordPolicyErrors(password: string, usernames: string[] = []): string[] {
+  const errors: string[] = []
+
+  if (password.length < 8 || password.length > 64) {
+    errors.push(t('user.batch.validation.passwordLengthRange', '密码长度需为 8-64 个字符'))
+  }
+
+  if (countPasswordCategories(password) < 3) {
+    errors.push(t('user.batch.validation.passwordCharacterCategories', '密码必须在大写字母、小写字母、数字、特殊字符中至少包含 3 类'))
+  }
+
+  if (WEAK_PASSWORDS.has(password.toLowerCase())) {
+    errors.push(t('user.batch.validation.passwordTooCommon', '该密码过于常见，请选择更安全的密码'))
+  }
+
+  const lowerPassword = password.toLowerCase()
+  const containsUsername = normalizeAccountIdentifiers(usernames).some((username) => lowerPassword.includes(username))
+  if (containsUsername) {
+    errors.push(t('user.batch.validation.passwordContainsUsername', '密码不能包含用户名信息'))
+  }
+
+  return errors
+}
+
+function validatePasswordRule(_rule: unknown, value: string, callback: (error?: Error) => void) {
+  const errors = getPasswordPolicyErrors(value || '', generateNames(usernameParsed.value, form.startNumber, form.count))
+  callback(errors.length > 0 ? new Error(errors.join('；')) : undefined)
+}
+
+function isBatchResultData(value: unknown): value is NonNullable<typeof resultData.value> {
+  if (!value || typeof value !== 'object') return false
+  const data = value as Partial<NonNullable<typeof resultData.value>>
+  return typeof data.total === 'number'
+    && typeof data.success === 'number'
+    && typeof data.failed === 'number'
+    && Array.isArray(data.results)
+}
+
+function showBatchResultMessage(result: NonNullable<typeof resultData.value>, message?: string) {
+  if (result.failed === 0) return
+
+  if (result.success === 0) {
+    ElMessage.error(message || t('user.batch.messages.allFailed', '批量创建失败，请查看失败详情'))
+    return
+  }
+
+  ElMessage.warning(t('user.batch.messages.partialFailed', '部分用户创建失败，请查看失败详情'))
+}
 
 // --- Actions ---
 
@@ -274,9 +381,14 @@ async function handleSubmit() {
     ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
     return
   }
-  phase.value = 'submitting'
+
   const usernames = generateNames(usernameParsed.value, form.startNumber, form.count)
   const nicknames = generateNames(nicknameParsed.value, form.startNumber, form.count)
+  const passwordErrors = getPasswordPolicyErrors(form.password, usernames)
+  if (passwordErrors.length > 0) {
+    ElMessage.error(passwordErrors.join('；'))
+    return
+  }
 
   const users = usernames.map((username, i) => ({
     username,
@@ -286,16 +398,41 @@ async function handleSubmit() {
     status: form.status,
   }))
 
+  phase.value = 'submitting'
   try {
     const { data } = await batchCreateUsers({
       users,
       organization_ids: [...form.organization_ids],
     })
+
+    if (data.code !== 0) {
+      if (isBatchResultData(data.data)) {
+        resultData.value = data.data
+        phase.value = 'result'
+        showBatchResultMessage(data.data, data.message)
+        return
+      }
+
+      throw new Error(data.message || t('user.messages.operationFailed'))
+    }
+
     resultData.value = data.data
     phase.value = 'result'
+    showBatchResultMessage(data.data)
   } catch (err: any) {
+    const responseData = err.response?.data
+    if (isBatchResultData(responseData?.data)) {
+      resultData.value = responseData.data
+      phase.value = 'result'
+      showBatchResultMessage(responseData.data, responseData.message)
+      return
+    }
+
     phase.value = 'form'
-    const msg = err.response?.data?.message || t('user.messages.operationFailed')
+    const errors = responseData?.errors
+    const msg = Array.isArray(errors) && errors.length > 0
+      ? errors.join('；')
+      : responseData?.message || err.message || t('user.messages.operationFailed')
     ElMessage.error(msg)
   }
 }

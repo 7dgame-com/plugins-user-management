@@ -229,6 +229,7 @@ export interface BatchCreateResultItem {
 
 export interface BatchCreateResult {
   code: number
+  message?: string
   data: {
     total: number
     success: number
