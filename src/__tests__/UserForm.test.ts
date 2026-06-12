@@ -12,6 +12,7 @@ const {
   listOrganizations,
   verifyCurrentToken,
   messageError,
+  messageWarning,
   messageSuccess,
 } = vi.hoisted(() => ({
   routeState: { params: {} as Record<string, string> },
@@ -22,6 +23,7 @@ const {
   listOrganizations: vi.fn(),
   verifyCurrentToken: vi.fn(),
   messageError: vi.fn(),
+  messageWarning: vi.fn(),
   messageSuccess: vi.fn(),
 }))
 
@@ -39,6 +41,7 @@ vi.mock('vue-i18n', () => ({
 vi.mock('element-plus', () => ({
   ElMessage: {
     error: messageError,
+    warning: messageWarning,
     success: messageSuccess,
   },
 }))
@@ -138,6 +141,7 @@ describe('UserForm', () => {
     listOrganizations.mockReset()
     verifyCurrentToken.mockReset()
     messageError.mockReset()
+    messageWarning.mockReset()
     messageSuccess.mockReset()
 
     verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['root'] } } })
@@ -268,5 +272,56 @@ describe('UserForm', () => {
     expect(apiPost).toHaveBeenCalledWith('/update-user', expect.not.objectContaining({
       organization_ids: expect.anything(),
     }))
+  })
+
+  it('shows a Chinese warning for Yii validation objects returned by create user', async () => {
+    apiPost.mockRejectedValueOnce({
+      response: {
+        status: 422,
+        data: {
+          username: ['Username "dirui" has already been taken.'],
+        },
+      },
+    })
+
+    const wrapper = mountForm()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.username = 'dirui'
+    ;(wrapper.vm as any).form.password = 'Secret123!'
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(messageWarning).toHaveBeenCalledWith('用户名“dirui”已存在')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('combines password policy details from backend errors into one warning', async () => {
+    apiPost.mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          code: 4003,
+          message: '密码不符合要求',
+          errors: [
+            '密码长度不能少于 8 个字符',
+            '密码必须在大写字母、小写字母、数字、特殊字符中至少包含 3 类',
+          ],
+        },
+      },
+    })
+
+    const wrapper = mountForm()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.username = 'alice'
+    ;(wrapper.vm as any).form.password = 'abc'
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(messageWarning).toHaveBeenCalledWith(
+      '密码不符合要求：密码长度不能少于 8 个字符；密码必须在大写字母、小写字母、数字、特殊字符中至少包含 3 类'
+    )
+    expect(push).not.toHaveBeenCalled()
   })
 })

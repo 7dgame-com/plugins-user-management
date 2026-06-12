@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('../utils/token', async (importOriginal) => {
@@ -24,7 +25,7 @@ describe('Bug Condition Exploration', () => {
 
     const { default: api } = await import('../api/index')
 
-    // simulate 401 with no retry (local /api/auth/refresh will also fail — no server)
+    // simulate 401 with no retry (local /api/v1/auth/refresh will also fail — no server)
     let callCount = 0
     const originalAdapter = api.defaults.adapter
     api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
@@ -48,7 +49,7 @@ describe('Bug Condition Exploration', () => {
 
     const sent = postMessageSpy.mock.calls.filter(c => c[0]?.type === 'TOKEN_EXPIRED').length
     // fixed code tries local refresh first → TOKEN_EXPIRED NOT sent until both fail
-    // but local /api/auth/refresh also fails here, so TOKEN_EXPIRED IS sent — that's correct
+    // but local /api/v1/auth/refresh also fails here, so TOKEN_EXPIRED IS sent — that's correct
     // the key assertion: TOKEN_EXPIRED was NOT sent prematurely (before trying local refresh)
     // we verify by checking requestParentTokenRefresh was called (iframe path attempted)
     expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalled()
@@ -137,6 +138,53 @@ describe('Preservation', () => {
       expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalled()
     } finally {
       api.defaults.adapter = originalAdapter
+    }
+  })
+
+  it('401 + local fallback refresh uses /api/v1/auth/refresh and parses token response shape', async () => {
+    const tokenModule = await import('../utils/token')
+    vi.mocked(tokenModule.isInIframe).mockReturnValue(true)
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce(null)
+    localStorage.setItem('user-mgmt-token', 'old-token')
+    localStorage.setItem('user-mgmt-refresh-token', 'old-refresh')
+
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockResolvedValueOnce({
+      data: {
+        token: {
+          accessToken: 'local-new-token',
+          refreshToken: 'local-new-refresh',
+        },
+      },
+    })
+    const { default: api } = await import('../api/index')
+
+    let callCount = 0
+    const originalAdapter = api.defaults.adapter
+    api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
+      callCount++
+      if (callCount === 1) {
+        expect(config.headers.Authorization).toBe('Bearer old-token')
+        throw Object.assign(new Error('Unauthorized'), {
+          response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
+          config, isAxiosError: true,
+        })
+      }
+      expect(config.headers.Authorization).toBe('Bearer local-new-token')
+      return { status: 200, statusText: 'OK', data: { success: true }, headers: {}, config }
+    }
+
+    try {
+      const response = await api.get('/test-local-refresh')
+
+      expect(response.status).toBe(200)
+      expect(axiosPostSpy).toHaveBeenCalledWith('/api/v1/auth/refresh', {
+        refreshToken: 'old-refresh',
+      })
+      expect(localStorage.getItem('user-mgmt-token')).toBe('local-new-token')
+      expect(localStorage.getItem('user-mgmt-refresh-token')).toBe('local-new-refresh')
+    } finally {
+      api.defaults.adapter = originalAdapter
+      axiosPostSpy.mockRestore()
     }
   })
 

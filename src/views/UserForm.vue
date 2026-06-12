@@ -89,6 +89,7 @@ import { ElMessage, type FormInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import api, { listOrganizations, type OrganizationItem, verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
+import { formatApiError } from '../utils/apiError'
 
 const { t } = useI18n()
 
@@ -245,7 +246,7 @@ async function handleSubmit() {
     }
     router.push('/users')
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.error || err.response?.data?.message || t('user.messages.operationFailed'))
+    ElMessage.warning(formatApiError(err, t('user.messages.operationFailed')))
   } finally {
     loading.value = false
   }
