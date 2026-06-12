@@ -9,12 +9,14 @@ const {
   verifyCurrentToken,
   listOrganizations,
   messageError,
+  messageWarning,
 } = vi.hoisted(() => ({
   push: vi.fn(),
   batchCreateUsers: vi.fn(),
   verifyCurrentToken: vi.fn(),
   listOrganizations: vi.fn(),
   messageError: vi.fn(),
+  messageWarning: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -30,6 +32,7 @@ vi.mock('vue-i18n', () => ({
 vi.mock('element-plus', () => ({
   ElMessage: {
     error: messageError,
+    warning: messageWarning,
   },
 }))
 
@@ -133,6 +136,7 @@ describe('BatchCreateForm', () => {
     verifyCurrentToken.mockReset()
     listOrganizations.mockReset()
     messageError.mockReset()
+    messageWarning.mockReset()
 
     verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['root'] } } })
     listOrganizations.mockResolvedValue({
@@ -158,7 +162,7 @@ describe('BatchCreateForm', () => {
     ;(wrapper.vm as any).form.usernameTemplate = 'student_{001}'
     ;(wrapper.vm as any).form.nicknameTemplate = 'Student {001}'
     ;(wrapper.vm as any).form.count = 2
-    ;(wrapper.vm as any).form.password = 'secret123'
+    ;(wrapper.vm as any).form.password = 'N9#VaultSafe'
     ;(wrapper.vm as any).form.role = 'user'
     ;(wrapper.vm as any).form.status = 10
     ;(wrapper.vm as any).form.organization_ids = [1, 2]
@@ -168,8 +172,8 @@ describe('BatchCreateForm', () => {
 
     expect(batchCreateUsers).toHaveBeenCalledWith({
       users: [
-        { username: 'student_001', nickname: 'Student 001', password: 'secret123', role: 'user', status: 10 },
-        { username: 'student_002', nickname: 'Student 002', password: 'secret123', role: 'user', status: 10 },
+        { username: 'student_001', nickname: 'Student 001', password: 'N9#VaultSafe', role: 'user', status: 10 },
+        { username: 'student_002', nickname: 'Student 002', password: 'N9#VaultSafe', role: 'user', status: 10 },
       ],
       organization_ids: [1, 2],
     })
@@ -183,5 +187,22 @@ describe('BatchCreateForm', () => {
 
     expect(messageError).toHaveBeenCalled()
     expect(wrapper.get('[data-testid="organization-select"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('blocks weak batch passwords before calling the backend', async () => {
+    const wrapper = mountForm()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.usernameTemplate = 'student_{001}'
+    ;(wrapper.vm as any).form.nicknameTemplate = 'Student {001}'
+    ;(wrapper.vm as any).form.count = 2
+    ;(wrapper.vm as any).form.password = '123456'
+    ;(wrapper.vm as any).form.role = 'user'
+
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(batchCreateUsers).not.toHaveBeenCalled()
+    expect(messageError).toHaveBeenCalledWith(expect.stringContaining('密码长度需为 8-64 个字符'))
   })
 })
