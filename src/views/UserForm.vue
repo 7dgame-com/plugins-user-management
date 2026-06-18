@@ -87,7 +87,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { listOrganizations, type OrganizationItem, verifyCurrentToken } from '../api'
+import api, { getPluginUserDetail, listOrganizations, type OrganizationItem, verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 import { formatApiError } from '../utils/apiError'
 
@@ -165,7 +165,7 @@ async function fetchCurrentUser() {
 async function loadUser() {
   if (!isEdit.value) return
   try {
-    const { data } = await api.get('/users', { params: { id: route.params.id } })
+    const { data } = await getPluginUserDetail(String(route.params.id))
     const user = data.data
     // 根用户不允许编辑
     if (Array.isArray(user.roles) && user.roles.includes('root')) {

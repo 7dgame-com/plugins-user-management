@@ -96,7 +96,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import api from '../api'
+import api, { listPluginInvitationRecords, listPluginInvitations } from '../api'
 
 const { t } = useI18n()
 
@@ -153,7 +153,7 @@ function formatTime(ts: number) {
 async function fetchInvitations() {
   loading.value = true
   try {
-    const { data } = await api.get('/invitations')
+    const { data } = await listPluginInvitations()
     invitations.value = data
   } catch (err: any) {
     ElMessage.error(err.response?.data?.error || err.response?.data?.message || t('invitation.messages.fetchFailed'))
@@ -216,7 +216,7 @@ async function viewRecords(row: Invitation) {
   showRecordsDialog.value = true
   loadingRecords.value = true
   try {
-    const { data } = await api.get('/invitation-records', { params: { code: row.code } })
+    const { data } = await listPluginInvitationRecords(row.code)
     records.value = data
   } catch (err: any) {
     ElMessage.error(err.response?.data?.error || err.response?.data?.message || t('invitation.messages.recordsFailed'))

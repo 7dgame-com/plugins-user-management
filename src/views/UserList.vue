@@ -112,7 +112,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Search, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { verifyCurrentToken } from '../api'
+import api, { getPluginUsers, verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -184,7 +184,7 @@ async function fetchUsers() {
       params.sort = sortField.value
       params.order = sortOrder.value
     }
-    const { data } = await api.get('/users', { params })
+    const { data } = await getPluginUsers(params)
     users.value = data.data
     total.value = data.pagination.total
   } catch (err: any) {

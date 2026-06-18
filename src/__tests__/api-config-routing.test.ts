@@ -38,10 +38,19 @@ describe('user-management auth-session routing semantics', () => {
     expect(nginxTemplate).not.toContain('# __CONFIG_LOCATIONS__')
   })
 
+  it('docker runtime wires /api-auth to APP_AUTH upstreams', () => {
+    const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
+
+    expect(entrypoint).toContain('generate_lb_config "APP_AUTH" "/api-auth/" "auth"')
+    expect(entrypoint).toContain('APP_AUTH_${i}_URL')
+    expect(entrypoint).toContain('${API_LOCATIONS}${AUTH_LOCATIONS}')
+  })
+
   it('formats debug-env JSON with a conditional upstream comma', () => {
     const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
 
     expect(entrypoint).toContain('DEBUG_LIST="${API_LIST}"')
+    expect(entrypoint).toContain('DEBUG_LIST="${DEBUG_LIST}\\"APP_AUTH_${i}_URL\\": \\"${url}\\""')
     expect(entrypoint).toContain('${DEBUG_LIST}${DEBUG_LIST:+, }')
     expect(entrypoint).not.toContain('  ${API_LIST},')
   })

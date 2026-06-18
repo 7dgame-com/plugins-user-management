@@ -7,7 +7,8 @@
 - Docker 镜像已构建并部署：`hkccr.ccs.tencentyun.com/plugins/user-manager:develop`
 - nginx 现按前缀拆分上游：
   - 前端请求 `/api/v1/plugin/verify-token` → `APP_API_N_URL + /v1/plugin/verify-token`
-  - 前端请求 `/api/v1/plugin-user/users` → `APP_API_N_URL + /v1/plugin-user/users`
+  - 前端只读用户列表/详情优先请求 `/api-auth/v1/plugin-user/users` → `APP_AUTH_N_URL + /v1/plugin-user/users`
+  - 当前仍保留 `/api/v1/plugin-user/users` 作为 Identity 不可用时的回退路径
 
 ## 问题
 

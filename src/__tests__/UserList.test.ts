@@ -31,6 +31,7 @@ vi.mock('../composables/usePermissions', () => ({
 
 vi.mock('../api', () => ({
   default: { get: apiGet },
+  getPluginUsers: (...args: unknown[]) => apiGet(...args),
   verifyCurrentToken: (...args: unknown[]) => verifyCurrentToken(...args),
 }))
 

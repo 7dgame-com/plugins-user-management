@@ -239,7 +239,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import api, { mainApi } from '../api'
+import api, { identityPluginUserApi, mainApi } from '../api'
 import { getToken, isInIframe } from '../utils/token'
 
 // ---- 环境信息 ----
@@ -247,6 +247,7 @@ const envInfo = reactive({
   location: window.location.href,
   origin: window.location.origin,
   userApiBase: api.defaults.baseURL || '/api/v1/plugin-user',
+  identityPluginUserApiBase: identityPluginUserApi.defaults.baseURL || '/api-auth/v1/plugin-user',
   mainApiBase: mainApi.defaults.baseURL || '/api/v1',
   hasToken: !!getToken(),
   isIframe: isInIframe(),
@@ -259,7 +260,7 @@ const envInfo = reactive({
 interface TestItem {
   name: string
   method: string
-  instance: 'userApi' | 'mainApi'
+  instance: 'userApi' | 'identityPluginUserApi' | 'mainApi'
   path: string
   params?: Record<string, any>
   fullUrl: string
@@ -271,10 +272,12 @@ interface TestItem {
   errorMessage: string
 }
 
-function makeTest(name: string, method: string, instance: 'userApi' | 'mainApi', path: string, params?: Record<string, any>): TestItem {
-  const base = instance === 'userApi'
-    ? (api.defaults.baseURL || '/api/v1/plugin-user')
-    : (mainApi.defaults.baseURL || '/api/v1')
+function makeTest(name: string, method: string, instance: 'userApi' | 'identityPluginUserApi' | 'mainApi', path: string, params?: Record<string, any>): TestItem {
+  const base = instance === 'identityPluginUserApi'
+    ? (identityPluginUserApi.defaults.baseURL || '/api-auth/v1/plugin-user')
+    : instance === 'userApi'
+      ? (api.defaults.baseURL || '/api/v1/plugin-user')
+      : (mainApi.defaults.baseURL || '/api/v1')
   const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
   return {
     name, method, instance, path, params,
@@ -284,11 +287,11 @@ function makeTest(name: string, method: string, instance: 'userApi' | 'mainApi',
 }
 
 const tests = ref<TestItem[]>([
-  makeTest('获取用户列表', 'GET', 'userApi', '/users', { page: '1', pageSize: '20' }),
-  makeTest('获取单个用户', 'GET', 'userApi', '/users', { id: '1' }),
+  makeTest('获取用户列表', 'GET', 'identityPluginUserApi', '/users', { page: '1', pageSize: '20' }),
+  makeTest('获取单个用户', 'GET', 'identityPluginUserApi', '/users', { id: '1' }),
   makeTest('验证 Token', 'GET', 'mainApi', '/plugin/verify-token'),
-  makeTest('获取邀请列表', 'GET', 'userApi', '/invitations'),
-  makeTest('Health Check', 'GET', 'userApi', '/../health'),
+  makeTest('获取邀请列表', 'GET', 'identityPluginUserApi', '/invitations'),
+  makeTest('Health Check', 'GET', 'identityPluginUserApi', '/../health'),
 ])
 
 async function runSingle(item: TestItem) {
@@ -299,7 +302,11 @@ async function runSingle(item: TestItem) {
   item.errorMessage = ''
   item.httpStatus = ''
 
-  const inst = item.instance === 'userApi' ? api : mainApi
+  const inst = item.instance === 'identityPluginUserApi'
+    ? identityPluginUserApi
+    : item.instance === 'userApi'
+      ? api
+      : mainApi
   try {
     const resp = await inst.request({
       method: item.method,
@@ -346,7 +353,7 @@ interface RawTestItem {
 }
 
 const rawTests = ref<RawTestItem[]>([
-  { name: 'userApi /users', url: '/api/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
+  { name: 'identityPluginUserApi /users', url: '/api-auth/v1/plugin-user/users?page=1&pageSize=20', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'mainApi /plugin/verify-token', url: '/api/v1/plugin/verify-token', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Health Check', url: '/health', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
   { name: 'Debug Env', url: '/debug-env', status: 'pending', httpStatus: '', responseBody: '', finalUrl: '', errorMessage: '' },
@@ -437,7 +444,7 @@ function makeProxyTest(name: string, url: string, expectedBackend: string): Prox
 }
 
 const proxyTests = ref<ProxyTestItem[]>([
-  makeProxyTest('/api/ → 后端 API', '/api/v1/plugin-user/users?page=1&pageSize=1', 'proxy_pass → API 后端'),
+  makeProxyTest('/api-auth/ → Identity API', '/api-auth/v1/plugin-user/users?page=1&pageSize=1', 'proxy_pass → Identity 后端'),
   makeProxyTest('/health → 健康检查', '/health', '本地 Nginx 直接返回'),
   makeProxyTest('/debug-env → 调试环境', '/debug-env', '本地 Nginx 静态文件'),
   makeProxyTest('/ → 前端静态文件', '/', '本地 Nginx try_files'),
