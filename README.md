@@ -11,11 +11,12 @@
 
 ## 架构
 
-纯前端插件，无独立后端。nginx 将 `/api/` 请求反向代理到主后端，前端直接调用主后端的插件 API。
+纯前端插件，无独立后端。nginx 将 `/api/` 请求反向代理到主后端，将 `/api-auth/` 请求反向代理到 identity-service，前端直接调用同源代理后的 API。
 
 ```
 浏览器 → nginx (port 80)
   ├── /api/*  → 主后端 API（APP_API_N_URL）
+  ├── /api-auth/* → Identity API（APP_AUTH_N_URL）
   └── /*      → SPA 静态文件
 ```
 
@@ -58,7 +59,10 @@ cd driver && docker-compose up -d
 # 构建并启动插件
 cd plugins/user-management
 docker build -t user-management .
-docker run -p 3003:80 -e APP_API_1_URL=http://xrugc-api:80 user-management
+docker run -p 3003:80 \
+  -e APP_API_1_URL=http://xrugc-api:80 \
+  -e APP_AUTH_1_URL=http://identity-adapter:8086 \
+  user-management
 ```
 
 或通过 `driver/docker-compose.yml` 统一编排：
@@ -70,6 +74,7 @@ xrugc-user-management:
     - "3003:80"
   environment:
     - APP_API_1_URL=http://xrugc-api:80
+    - APP_AUTH_1_URL=http://identity-adapter:8086
   networks:
     - xrugc-network
 ```
@@ -79,16 +84,17 @@ xrugc-user-management:
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `APP_API_1_URL` / `APP_API_N_URL` | 主后端 API 上游地址，支持按序号配置多个后端 | `http://xrugc-api:80`（Docker 内部）或 `https://api.xrugc.com`（生产） |
+| `APP_AUTH_1_URL` / `APP_AUTH_N_URL` | Identity API 上游地址，支持按序号配置多个后端 | `http://identity-adapter:8086`（Docker 内部）或 `https://identity.xrteeth.com`（生产） |
 
 ## API
 
-插件前端现在只通过 `/api/` 代理主后端。插件内部会用主后端 `GET /api/v1/plugin/verify-token` 拉取当前用户角色，并在前端本地做访问判断：
+插件前端现在通过 `/api/` 与 `/api-auth/` 两条同源代理协作。插件内部会用主后端 `GET /api/v1/plugin/verify-token` 拉取当前用户角色，并在前端本地做访问判断；用户列表/详情等只读查询优先走 Identity 兼容接口，Identity 不可用时回退主后端旧接口。
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
 | GET | /api/v1/plugin/verify-token | 当前用户身份与角色 | 需认证 |
-| GET | /api/v1/plugin-user/users | 用户列表（分页+搜索） | list-users |
-| GET | /api/v1/plugin-user/users/:id | 用户详情 | view-user |
+| GET | /api-auth/v1/plugin-user/users | 用户列表（分页+搜索，只读优先；失败回退 `/api/v1/plugin-user/users`） | list-users |
+| GET | /api-auth/v1/plugin-user/users?id=:id | 用户详情（只读优先；失败回退 `/api/v1/plugin-user/users?id=:id`） | view-user |
 | POST | /api/v1/plugin-user/users | 创建用户 | create-user |
 | PUT | /api/v1/plugin-user/users/:id | 更新用户 | update-user |
 | DELETE | /api/v1/plugin-user/users/:id | 删除用户 | delete-user |

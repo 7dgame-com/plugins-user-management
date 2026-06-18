@@ -19,6 +19,15 @@ const userApi = axios.create({
 })
 
 /**
+ * Identity 只读兼容接口。当前仅用于 users list/detail 和邀请读取，
+ * 写操作仍保留在主后端旧路径，直到 plugin-user write-path 阶段。
+ */
+const identityPluginUserApi = axios.create({
+  baseURL: '/api-auth/v1/plugin-user',
+  timeout: 10000
+})
+
+/**
  * 主后端接口（指向主系统 /api/v1）
  */
 const mainApi = axios.create({
@@ -180,11 +189,12 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
 }
 
 setupInterceptors(userApi)
+setupInterceptors(identityPluginUserApi)
 setupInterceptors(mainApi)
 
 // 默认导出 userApi（用户管理接口），同时具名导出 mainApi
 export default userApi
-export { mainApi }
+export { identityPluginUserApi, mainApi }
 
 export interface VerifyTokenResponse {
   code: number
@@ -245,6 +255,38 @@ export function batchCreateUsers(payload: BatchCreatePayload): Promise<{ data: B
     // incorrectly surfacing a failure after the server already completed.
     timeout: 0,
   })
+}
+
+export function getPluginUsers(params?: Record<string, unknown>): Promise<{ data: any }> {
+  return getPluginUserReadonly('/users', params)
+}
+
+export function getPluginUserDetail(id: string | number): Promise<{ data: any }> {
+  return getPluginUserReadonly('/users', { id })
+}
+
+export function listPluginInvitations(): Promise<{ data: any }> {
+  return getPluginUserReadonly('/invitations')
+}
+
+export function listPluginInvitationRecords(code: string): Promise<{ data: any }> {
+  return getPluginUserReadonly('/invitation-records', { code })
+}
+
+function getPluginUserReadonly(path: string, params?: Record<string, unknown>): Promise<{ data: any }> {
+  return identityPluginUserApi.get(path, { params }).catch((err: AxiosError) => {
+    if (shouldFallbackToLegacyPluginUser(err)) {
+      return userApi.get(path, { params })
+    }
+    return Promise.reject(err)
+  })
+}
+
+function shouldFallbackToLegacyPluginUser(err: AxiosError): boolean {
+  if (!err.response) {
+    return true
+  }
+  return [401, 404, 502, 503, 504].includes(err.response.status)
 }
 
 export interface OrganizationItem {
