@@ -9,6 +9,9 @@ const {
   back,
   apiGet,
   apiPost,
+  changePluginUserRole,
+  createPluginUser,
+  updatePluginUser,
   listOrganizations,
   verifyCurrentToken,
   messageError,
@@ -20,6 +23,9 @@ const {
   back: vi.fn(),
   apiGet: vi.fn(),
   apiPost: vi.fn(),
+  changePluginUserRole: vi.fn(),
+  createPluginUser: vi.fn(),
+  updatePluginUser: vi.fn(),
   listOrganizations: vi.fn(),
   verifyCurrentToken: vi.fn(),
   messageError: vi.fn(),
@@ -52,8 +58,11 @@ vi.mock('../composables/usePermissions', () => ({
 
 vi.mock('../api', () => ({
   default: { get: apiGet, post: apiPost },
+  changePluginUserRole: (...args: unknown[]) => changePluginUserRole(...args),
+  createPluginUser: (...args: unknown[]) => createPluginUser(...args),
   getPluginUserDetail: (...args: unknown[]) => apiGet(...args),
   listOrganizations: (...args: unknown[]) => listOrganizations(...args),
+  updatePluginUser: (...args: unknown[]) => updatePluginUser(...args),
   verifyCurrentToken: (...args: unknown[]) => verifyCurrentToken(...args),
 }))
 
@@ -139,6 +148,9 @@ describe('UserForm', () => {
     back.mockReset()
     apiGet.mockReset()
     apiPost.mockReset()
+    changePluginUserRole.mockReset()
+    createPluginUser.mockReset()
+    updatePluginUser.mockReset()
     listOrganizations.mockReset()
     verifyCurrentToken.mockReset()
     messageError.mockReset()
@@ -156,6 +168,9 @@ describe('UserForm', () => {
       },
     })
     apiPost.mockResolvedValue({ data: { code: 0 } })
+    changePluginUserRole.mockResolvedValue({ data: { code: 0 } })
+    createPluginUser.mockResolvedValue({ data: { code: 0 } })
+    updatePluginUser.mockResolvedValue({ data: { code: 0 } })
   })
 
   it('submits selected organization ids when creating a user', async () => {
@@ -174,7 +189,7 @@ describe('UserForm', () => {
     await flushPromises()
 
     expect(listOrganizations).toHaveBeenCalledTimes(1)
-    expect(apiPost).toHaveBeenCalledWith('/create-user', expect.objectContaining({
+    expect(createPluginUser).toHaveBeenCalledWith(expect.objectContaining({
       username: 'alice',
       nickname: 'Alice Liddell',
       email: 'alice@example.com',
@@ -234,12 +249,12 @@ describe('UserForm', () => {
     await (wrapper.vm as any).handleSubmit()
     await flushPromises()
 
-    expect(apiPost).toHaveBeenCalledWith('/update-user', expect.objectContaining({
+    expect(updatePluginUser).toHaveBeenCalledWith(expect.objectContaining({
       id: '42',
       nickname: 'Alice Updated',
       organization_ids: [2],
     }))
-    expect(apiPost).toHaveBeenCalledWith('/update-user', expect.not.objectContaining({
+    expect(updatePluginUser).toHaveBeenCalledWith(expect.not.objectContaining({
       username: expect.anything(),
     }))
   })
@@ -270,13 +285,13 @@ describe('UserForm', () => {
     await (wrapper.vm as any).handleSubmit()
     await flushPromises()
 
-    expect(apiPost).toHaveBeenCalledWith('/update-user', expect.not.objectContaining({
+    expect(updatePluginUser).toHaveBeenCalledWith(expect.not.objectContaining({
       organization_ids: expect.anything(),
     }))
   })
 
   it('shows a Chinese warning for Yii validation objects returned by create user', async () => {
-    apiPost.mockRejectedValueOnce({
+    createPluginUser.mockRejectedValueOnce({
       response: {
         status: 422,
         data: {
@@ -298,7 +313,7 @@ describe('UserForm', () => {
   })
 
   it('combines password policy details from backend errors into one warning', async () => {
-    apiPost.mockRejectedValueOnce({
+    createPluginUser.mockRejectedValueOnce({
       response: {
         status: 400,
         data: {
