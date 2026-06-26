@@ -5,8 +5,10 @@ import UserList from '../views/UserList.vue'
 
 const TABLE_ROWS_KEY = Symbol('tableRows')
 
-const { apiGet, verifyCurrentToken, messageError } = vi.hoisted(() => ({
+const { apiGet, changePluginUserRole, deletePluginUser, verifyCurrentToken, messageError } = vi.hoisted(() => ({
   apiGet: vi.fn(),
+  changePluginUserRole: vi.fn(),
+  deletePluginUser: vi.fn(),
   verifyCurrentToken: vi.fn(),
   messageError: vi.fn(),
 }))
@@ -31,6 +33,8 @@ vi.mock('../composables/usePermissions', () => ({
 
 vi.mock('../api', () => ({
   default: { get: apiGet },
+  changePluginUserRole: (...args: unknown[]) => changePluginUserRole(...args),
+  deletePluginUser: (...args: unknown[]) => deletePluginUser(...args),
   getPluginUsers: (...args: unknown[]) => apiGet(...args),
   verifyCurrentToken: (...args: unknown[]) => verifyCurrentToken(...args),
 }))
@@ -130,6 +134,8 @@ function mountPage() {
 describe('UserList', () => {
   beforeEach(() => {
     apiGet.mockReset()
+    changePluginUserRole.mockReset()
+    deletePluginUser.mockReset()
     verifyCurrentToken.mockReset()
     messageError.mockReset()
 

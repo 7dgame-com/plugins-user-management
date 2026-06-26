@@ -88,21 +88,22 @@ xrugc-user-management:
 
 ## API
 
-插件前端现在通过 `/api/` 与 `/api-auth/` 两条同源代理协作。插件内部会用主后端 `GET /api/v1/plugin/verify-token` 拉取当前用户角色，并在前端本地做访问判断；用户列表/详情等只读查询优先走 Identity 兼容接口，Identity 不可用时回退主后端旧接口。
+插件前端现在通过 `/api/` 与 `/api-auth/` 两条同源代理协作。插件内部会用主后端 `GET /api/v1/plugin/verify-token` 拉取当前用户角色，并在前端本地做访问判断；用户列表/详情等只读查询优先走 Identity 兼容接口，Identity 不可用时回退主后端旧接口。Stage 9.8 起，用户管理写操作会先尝试 Identity legacy-proxy 写接口；仅当 Identity 写接口明确未启用或旧镜像不存在该路由时，才回退主后端旧接口，避免 5xx/超时后重复写入。
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
 | GET | /api/v1/plugin/verify-token | 当前用户身份与角色 | 需认证 |
 | GET | /api-auth/v1/plugin-user/users | 用户列表（分页+搜索，只读优先；失败回退 `/api/v1/plugin-user/users`） | list-users |
 | GET | /api-auth/v1/plugin-user/users?id=:id | 用户详情（只读优先；失败回退 `/api/v1/plugin-user/users?id=:id`） | view-user |
-| POST | /api/v1/plugin-user/users | 创建用户 | create-user |
-| PUT | /api/v1/plugin-user/users/:id | 更新用户 | update-user |
-| DELETE | /api/v1/plugin-user/users/:id | 删除用户 | delete-user |
-| POST | /api/v1/plugin-user/batch-create-users | 批量创建用户 | create-user |
-| GET | /api/v1/plugin-user/invitations | 邀请列表 | manage-invitations |
-| POST | /api/v1/plugin-user/invitations | 生成邀请链接 | manage-invitations |
-| DELETE | /api/v1/plugin-user/invitations/:id | 撤销邀请 | manage-invitations |
-| GET | /api/v1/plugin-user/health | 健康检查 | 无 |
+| POST | /api-auth/v1/plugin-user/create-user | 创建用户（Identity legacy-proxy 优先，未启用时回退 `/api/v1/plugin-user/create-user`） | create-user |
+| POST | /api-auth/v1/plugin-user/update-user | 更新用户（Identity legacy-proxy 优先，未启用时回退 `/api/v1/plugin-user/update-user`） | update-user |
+| POST | /api-auth/v1/plugin-user/delete-user | 删除用户（Identity legacy-proxy 优先，未启用时回退 `/api/v1/plugin-user/delete-user`） | delete-user |
+| POST | /api-auth/v1/plugin-user/change-role | 修改角色（Identity legacy-proxy 优先，未启用时回退 `/api/v1/plugin-user/change-role`） | change-role |
+| POST | /api-auth/v1/plugin-user/batch-create-users | 批量创建用户（Identity legacy-proxy 优先，未启用时回退 `/api/v1/plugin-user/batch-create-users`） | create-user |
+| GET | /api-auth/v1/plugin-user/invitations | 邀请列表 | manage-invitations |
+| POST | /api/v1/plugin-user/create-invitation | 生成邀请链接 | manage-invitations |
+| POST | /api/v1/plugin-user/delete-invitation | 撤销邀请 | manage-invitations |
+| GET | /api-auth/health | Identity 健康检查 | 无 |
 
 ## 前端访问逻辑
 
