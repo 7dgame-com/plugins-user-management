@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import type { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import {
   getToken,
   setToken,
@@ -19,8 +19,8 @@ const userApi = axios.create({
 })
 
 /**
- * Identity 只读兼容接口。当前仅用于 users list/detail 和邀请读取，
- * 写操作仍保留在主后端旧路径，直到 plugin-user write-path 阶段。
+ * Identity 兼容接口。读路径已用于 users list/detail 和邀请读取；
+ * Stage 9.8 起，用户管理写路径会先尝试 identity legacy-proxy。
  */
 const identityPluginUserApi = axios.create({
   baseURL: '/api-auth/v1/plugin-user',
@@ -249,12 +249,28 @@ export interface BatchCreateResult {
 }
 
 export function batchCreateUsers(payload: BatchCreatePayload): Promise<{ data: BatchCreateResult }> {
-  return userApi.post('/batch-create-users', payload, {
+  return postPluginUserWrite('/batch-create-users', payload, {
     // Batch creation is intentionally long-running for larger user sets.
     // Keep this request from inheriting the generic 10s timeout and
     // incorrectly surfacing a failure after the server already completed.
     timeout: 0,
   })
+}
+
+export function createPluginUser(payload: Record<string, unknown>): Promise<{ data: any }> {
+  return postPluginUserWrite('/create-user', payload)
+}
+
+export function updatePluginUser(payload: Record<string, unknown>): Promise<{ data: any }> {
+  return postPluginUserWrite('/update-user', payload)
+}
+
+export function deletePluginUser(id: string | number): Promise<{ data: any }> {
+  return postPluginUserWrite('/delete-user', { id })
+}
+
+export function changePluginUserRole(id: string | number, role: string): Promise<{ data: any }> {
+  return postPluginUserWrite('/change-role', { id, role })
 }
 
 export function getPluginUsers(params?: Record<string, unknown>): Promise<{ data: any }> {
@@ -282,11 +298,48 @@ function getPluginUserReadonly(path: string, params?: Record<string, unknown>): 
   })
 }
 
+function postPluginUserWrite(
+  path: string,
+  payload: unknown,
+  config?: AxiosRequestConfig
+): Promise<{ data: any }> {
+  return identityPluginUserApi.post(path, payload, config).catch((err: AxiosError) => {
+    if (shouldFallbackToLegacyPluginUserWrite(err)) {
+      return userApi.post(path, payload, config)
+    }
+    return Promise.reject(err)
+  })
+}
+
 function shouldFallbackToLegacyPluginUser(err: AxiosError): boolean {
   if (!err.response) {
     return true
   }
   return [401, 404, 502, 503, 504].includes(err.response.status)
+}
+
+function shouldFallbackToLegacyPluginUserWrite(err: AxiosError): boolean {
+  const response = err.response
+  if (!response || response.status !== 404) {
+    return false
+  }
+
+  const data = response.data as any
+  const code = data?.code
+  if (code === 'PLUGIN_USER_WRITE_DISABLED' || code === 'PLUGIN_USER_WRITE_UNSUPPORTED_MODE') {
+    return true
+  }
+
+  if (code) {
+    return false
+  }
+
+  const message = typeof data?.message === 'string' ? data.message : ''
+  if (message.startsWith('Cannot POST /v1/plugin-user/')) {
+    return true
+  }
+
+  return typeof data === 'string' || data == null
 }
 
 export interface OrganizationItem {

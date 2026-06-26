@@ -188,8 +188,8 @@ describe('Preservation', () => {
     }
   })
 
-  it('batchCreateUsers disables the short default timeout for long-running jobs', async () => {
-    const { default: api, batchCreateUsers } = await import('../api/index')
+  it('batchCreateUsers uses identity write proxy and disables the short default timeout for long-running jobs', async () => {
+    const { identityPluginUserApi, batchCreateUsers } = await import('../api/index')
     const payload = {
       users: [
         {
@@ -202,7 +202,7 @@ describe('Preservation', () => {
       ],
     }
 
-    const postSpy = vi.spyOn(api, 'post').mockResolvedValue({
+    const postSpy = vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
       data: {
         code: 0,
         data: { total: 1, success: 1, failed: 0, results: [] },
@@ -212,5 +212,53 @@ describe('Preservation', () => {
     await batchCreateUsers(payload)
 
     expect(postSpy).toHaveBeenCalledWith('/batch-create-users', payload, { timeout: 0 })
+  })
+
+  it('falls back to legacy plugin-user writes only when identity write proxy is not enabled', async () => {
+    const { default: api, identityPluginUserApi, createPluginUser } = await import('../api/index')
+    const payload = {
+      username: 'new-user',
+      password: 'secret123',
+    }
+
+    const identityPostSpy = vi.spyOn(identityPluginUserApi, 'post').mockRejectedValue({
+      response: {
+        status: 404,
+        data: {
+          code: 'PLUGIN_USER_WRITE_DISABLED',
+          message: 'Plugin user write migration is disabled.',
+        },
+      },
+      isAxiosError: true,
+    })
+    const legacyPostSpy = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { code: 0, data: { id: 101 } },
+    } as any)
+
+    await createPluginUser(payload)
+
+    expect(identityPostSpy).toHaveBeenCalledWith('/create-user', payload, undefined)
+    expect(legacyPostSpy).toHaveBeenCalledWith('/create-user', payload, undefined)
+  })
+
+  it('does not repeat write requests when identity write proxy returns a legacy validation error', async () => {
+    const { default: api, identityPluginUserApi, updatePluginUser } = await import('../api/index')
+    const payload = { id: 404, nickname: 'missing' }
+
+    vi.spyOn(identityPluginUserApi, 'post').mockRejectedValue({
+      response: {
+        status: 404,
+        data: {
+          code: 4004,
+          message: '用户不存在',
+        },
+      },
+      isAxiosError: true,
+    })
+    const legacyPostSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { code: 0 } } as any)
+
+    await expect(updatePluginUser(payload)).rejects.toBeTruthy()
+
+    expect(legacyPostSpy).not.toHaveBeenCalled()
   })
 })

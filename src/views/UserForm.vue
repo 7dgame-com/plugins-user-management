@@ -87,7 +87,15 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { getPluginUserDetail, listOrganizations, type OrganizationItem, verifyCurrentToken } from '../api'
+import {
+  changePluginUserRole,
+  createPluginUser,
+  getPluginUserDetail,
+  listOrganizations,
+  type OrganizationItem,
+  updatePluginUser,
+  verifyCurrentToken
+} from '../api'
 import { usePermissions } from '../composables/usePermissions'
 import { formatApiError } from '../utils/apiError'
 
@@ -230,18 +238,18 @@ async function handleSubmit() {
     }
 
     if (isEdit.value) {
-      await api.post('/update-user', { id: route.params.id, ...payload })
+      await updatePluginUser({ id: route.params.id, ...payload })
       // If role changed, update separately
       if (canEditRole.value && form.role && form.role !== originalRole.value) {
         if (form.role === 'root') {
           ElMessage.error(t('user.messages.rootRoleNotAllowed', '不允许将用户设置为 root 角色'))
           return
         }
-        await api.post('/change-role', { id: route.params.id, role: form.role })
+        await changePluginUserRole(route.params.id as string, form.role)
       }
       ElMessage.success(t('user.messages.updateSuccess'))
     } else {
-      await api.post('/create-user', payload)
+      await createPluginUser(payload)
       ElMessage.success(t('user.messages.createSuccess'))
     }
     router.push('/users')

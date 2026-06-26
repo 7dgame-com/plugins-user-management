@@ -112,7 +112,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Search, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import api, { getPluginUsers, verifyCurrentToken } from '../api'
+import { changePluginUserRole, deletePluginUser, getPluginUsers, verifyCurrentToken } from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -200,7 +200,7 @@ async function handleRoleChange(row: any, newRole: string) {
     return
   }
   try {
-    await api.post('/change-role', { id: row.id, role: newRole })
+    await changePluginUserRole(row.id, newRole)
     ElMessage.success(t('user.messages.roleChangeSuccess'))
     fetchUsers()
   } catch (err: any) {
@@ -210,7 +210,7 @@ async function handleRoleChange(row: any, newRole: string) {
 
 async function handleDelete(id: number) {
   try {
-    await api.post('/delete-user', { id })
+    await deletePluginUser(id)
     ElMessage.success(t('user.messages.deleteSuccess'))
     fetchUsers()
   } catch (err: any) {
