@@ -5,10 +5,11 @@ import UserList from '../views/UserList.vue'
 
 const TABLE_ROWS_KEY = Symbol('tableRows')
 
-const { apiGet, changePluginUserRole, deletePluginUser, verifyCurrentToken, messageError } = vi.hoisted(() => ({
+const { apiGet, changePluginUserRole, deletePluginUser, getPluginUserLoginAudit, verifyCurrentToken, messageError } = vi.hoisted(() => ({
   apiGet: vi.fn(),
   changePluginUserRole: vi.fn(),
   deletePluginUser: vi.fn(),
+  getPluginUserLoginAudit: vi.fn(),
   verifyCurrentToken: vi.fn(),
   messageError: vi.fn(),
 }))
@@ -35,6 +36,7 @@ vi.mock('../api', () => ({
   default: { get: apiGet },
   changePluginUserRole: (...args: unknown[]) => changePluginUserRole(...args),
   deletePluginUser: (...args: unknown[]) => deletePluginUser(...args),
+  getPluginUserLoginAudit: (...args: unknown[]) => getPluginUserLoginAudit(...args),
   getPluginUsers: (...args: unknown[]) => apiGet(...args),
   verifyCurrentToken: (...args: unknown[]) => verifyCurrentToken(...args),
 }))
@@ -82,6 +84,20 @@ const ElButtonStub = defineComponent({
   template: '<button @click="$emit(`click`)"><slot /></button>',
 })
 
+const ElDialogStub = defineComponent({
+  props: ['modelValue', 'title'],
+  template: '<section v-if="modelValue" class="dialog-stub"><h2>{{ title }}</h2><slot /></section>',
+})
+
+const ElEmptyStub = defineComponent({
+  props: ['description'],
+  template: '<div class="empty-stub">{{ description }}</div>',
+})
+
+const ElTagStub = defineComponent({
+  template: '<span class="tag-stub"><slot /></span>',
+})
+
 const passthroughStub = defineComponent({
   template: '<div><slot /></div>',
 })
@@ -118,6 +134,9 @@ function mountPage() {
         ElTableColumn: ElTableColumnStub,
         ElInput: ElInputStub,
         ElButton: ElButtonStub,
+        ElDialog: ElDialogStub,
+        ElEmpty: ElEmptyStub,
+        ElTag: ElTagStub,
         ElPagination: ElPaginationStub,
         ElIcon: passthroughStub,
         ElSelect: passthroughStub,
@@ -126,6 +145,7 @@ function mountPage() {
         ElTooltip: passthroughStub,
         Search: true,
         Plus: true,
+        Clock: true,
       },
     },
   })
@@ -136,6 +156,7 @@ describe('UserList', () => {
     apiGet.mockReset()
     changePluginUserRole.mockReset()
     deletePluginUser.mockReset()
+    getPluginUserLoginAudit.mockReset()
     verifyCurrentToken.mockReset()
     messageError.mockReset()
 
@@ -166,5 +187,52 @@ describe('UserList', () => {
     const organizationColumn = wrapper.find('[data-prop="organizations"]')
     expect(organizationColumn.exists()).toBe(true)
     expect(organizationColumn.text()).toContain('-')
+  })
+
+  it('opens login audit records from the user row actions', async () => {
+    apiGet.mockResolvedValue(buildListResponse([{ id: 1, title: 'Acme Studio', name: 'acme' }]))
+    getPluginUserLoginAudit.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          stats: {
+            legacyUserId: 1,
+            identityUserId: null,
+            username: 'alice',
+            loginCount: 2,
+            failedLoginCount: 1,
+            lastLoginAt: '2026-06-06T16:44:48.000Z',
+            lastFailedLoginAt: null,
+            updatedAt: '2026-06-06T16:44:48.000Z',
+          },
+          recentEvents: [
+            {
+              eventKey: 'event-1',
+              eventType: 'login',
+              success: true,
+              occurredAt: '2026-06-06T16:44:48.000Z',
+              source: 'legacy-backend',
+              traceId: 'trace-1',
+              metadata: {},
+            },
+          ],
+        },
+      },
+    })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const auditButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('user.loginAudit.action'))
+    expect(auditButton).toBeTruthy()
+    await auditButton!.trigger('click')
+    await flushPromises()
+
+    expect(getPluginUserLoginAudit).toHaveBeenCalledWith(1)
+    expect(wrapper.text()).toContain('user.loginAudit.title - alice')
+    expect(wrapper.text()).toContain('legacy-backend')
+    expect(wrapper.text()).toContain('trace-1')
   })
 })

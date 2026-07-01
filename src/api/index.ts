@@ -281,6 +281,39 @@ export function getPluginUserDetail(id: string | number): Promise<{ data: any }>
   return getPluginUserReadonly('/users', { id })
 }
 
+export interface LoginAuditStats {
+  legacyUserId: number | null
+  identityUserId: string | null
+  username: string | null
+  loginCount: number
+  failedLoginCount: number
+  lastLoginAt: string | null
+  lastFailedLoginAt: string | null
+  updatedAt: string | null
+}
+
+export interface LoginAuditRecentEvent {
+  eventKey: string
+  eventType: string
+  success: boolean
+  occurredAt: string
+  source: string
+  traceId: string | null
+  metadata: unknown
+}
+
+export interface LoginAuditResponse {
+  code: number
+  data: {
+    stats: LoginAuditStats | null
+    recentEvents: LoginAuditRecentEvent[]
+  }
+}
+
+export function getPluginUserLoginAudit(id: string | number): Promise<{ data: LoginAuditResponse }> {
+  return identityPluginUserApi.get(`/users/${id}/login-audit`)
+}
+
 export function listPluginInvitations(): Promise<{ data: any }> {
   return getPluginUserReadonly('/invitations')
 }
