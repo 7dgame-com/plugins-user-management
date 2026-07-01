@@ -71,8 +71,12 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column v-if="can('update-user') || can('delete-user')" :label="t('common.actions')" width="160" fixed="right">
+        <el-table-column v-if="can('list-users') || can('update-user') || can('delete-user')" :label="t('common.actions')" width="240" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="can('list-users')" link type="primary" @click="openLoginAudit(row)">
+              <el-icon><Clock /></el-icon>
+              {{ t('user.loginAudit.action') }}
+            </el-button>
             <template v-if="isRootUser(row)">
               <el-tooltip content="根用户不可操作" placement="top">
                 <span style="color: #c0c4cc; font-size: 13px; cursor: not-allowed">受保护</span>
@@ -104,15 +108,83 @@
         />
       </div>
     </div>
+
+    <el-dialog
+      v-model="loginAuditDialogVisible"
+      :title="loginAuditDialogTitle"
+      width="min(720px, 92vw)"
+      class="login-audit-dialog"
+    >
+      <div v-loading="loginAuditLoading" class="login-audit-content">
+        <template v-if="!loginAuditLoading">
+          <div v-if="loginAuditStats" class="audit-summary">
+            <div class="audit-metric">
+              <span>{{ t('user.loginAudit.loginCount') }}</span>
+              <strong>{{ loginAuditStats.loginCount }}</strong>
+            </div>
+            <div class="audit-metric">
+              <span>{{ t('user.loginAudit.failedLoginCount') }}</span>
+              <strong>{{ loginAuditStats.failedLoginCount }}</strong>
+            </div>
+            <div class="audit-metric wide">
+              <span>{{ t('user.loginAudit.lastLoginAt') }}</span>
+              <strong>{{ formatDateTime(loginAuditStats.lastLoginAt) }}</strong>
+            </div>
+            <div class="audit-metric wide">
+              <span>{{ t('user.loginAudit.lastFailedLoginAt') }}</span>
+              <strong>{{ formatDateTime(loginAuditStats.lastFailedLoginAt) }}</strong>
+            </div>
+          </div>
+
+          <el-empty v-else :description="t('user.loginAudit.noRecords')" />
+
+          <el-table
+            v-if="loginAuditEvents.length > 0"
+            :data="loginAuditEvents"
+            size="small"
+            border
+            class="audit-events-table"
+          >
+            <el-table-column prop="occurredAt" :label="t('user.loginAudit.occurredAt')" min-width="180">
+              <template #default="{ row }">
+                {{ formatDateTime(row.occurredAt) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="eventType" :label="t('user.loginAudit.eventType')" min-width="110" />
+            <el-table-column prop="success" :label="t('user.loginAudit.result')" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.success ? 'success' : 'danger'">
+                  {{ t(row.success ? 'user.loginAudit.success' : 'user.loginAudit.failed') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="source" :label="t('user.loginAudit.source')" min-width="140" />
+            <el-table-column prop="traceId" :label="t('user.loginAudit.traceId')" min-width="140">
+              <template #default="{ row }">
+                {{ row.traceId || '-' }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Search, Plus } from '@element-plus/icons-vue'
+import { Search, Plus, Clock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { changePluginUserRole, deletePluginUser, getPluginUsers, verifyCurrentToken } from '../api'
+import {
+  changePluginUserRole,
+  deletePluginUser,
+  getPluginUserLoginAudit,
+  getPluginUsers,
+  verifyCurrentToken,
+  type LoginAuditRecentEvent,
+  type LoginAuditStats,
+} from '../api'
 import { usePermissions } from '../composables/usePermissions'
 
 const { t } = useI18n()
@@ -131,6 +203,16 @@ const total = ref(0)
 const sortField = ref('')
 const sortOrder = ref('')
 const currentUserRoles = ref<string[]>([])
+const loginAuditDialogVisible = ref(false)
+const loginAuditLoading = ref(false)
+const selectedAuditUser = ref<any | null>(null)
+const loginAuditStats = ref<LoginAuditStats | null>(null)
+const loginAuditEvents = ref<LoginAuditRecentEvent[]>([])
+
+const loginAuditDialogTitle = computed(() => {
+  const username = selectedAuditUser.value?.username
+  return username ? `${t('user.loginAudit.title')} - ${username}` : t('user.loginAudit.title')
+})
 
 function getRoleLevel(roles?: string[]): number {
   if (!roles || roles.length === 0) return 0
@@ -218,6 +300,24 @@ async function handleDelete(id: number) {
   }
 }
 
+async function openLoginAudit(row: any) {
+  selectedAuditUser.value = row
+  loginAuditDialogVisible.value = true
+  loginAuditLoading.value = true
+  loginAuditStats.value = null
+  loginAuditEvents.value = []
+
+  try {
+    const { data } = await getPluginUserLoginAudit(row.id)
+    loginAuditStats.value = data.data?.stats ?? null
+    loginAuditEvents.value = data.data?.recentEvents ?? []
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.error || err.response?.data?.message || t('user.loginAudit.messages.fetchFailed'))
+  } finally {
+    loginAuditLoading.value = false
+  }
+}
+
 function handleSortChange({ prop, order }: { prop: string; order: string | null }) {
   sortField.value = order ? prop : ''
   sortOrder.value = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : ''
@@ -227,6 +327,13 @@ function handleSortChange({ prop, order }: { prop: string; order: string | null 
 function formatTime(ts: number) {
   if (!ts) return '-'
   return new Date(ts * 1000).toLocaleString('zh-CN')
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN')
 }
 
 onMounted(() => {
@@ -257,6 +364,53 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   border-top: 1px solid var(--border-color);
+}
+
+.login-audit-content {
+  min-height: 180px;
+}
+
+.audit-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.audit-metric {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-page);
+  min-width: 0;
+}
+
+.audit-metric.wide {
+  grid-column: span 1;
+}
+
+.audit-metric span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin-bottom: 4px;
+}
+
+.audit-metric strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.audit-events-table {
+  margin-top: var(--spacing-sm);
+}
+
+@media (max-width: 640px) {
+  .audit-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .organization-list {

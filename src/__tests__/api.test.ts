@@ -214,6 +214,23 @@ describe('Preservation', () => {
     expect(postSpy).toHaveBeenCalledWith('/batch-create-users', payload, { timeout: 0 })
   })
 
+  it('getPluginUserLoginAudit reads from the identity plugin-user endpoint', async () => {
+    const { identityPluginUserApi, getPluginUserLoginAudit } = await import('../api/index')
+    const getSpy = vi.spyOn(identityPluginUserApi, 'get').mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          stats: null,
+          recentEvents: [],
+        },
+      },
+    } as any)
+
+    await getPluginUserLoginAudit(24)
+
+    expect(getSpy).toHaveBeenCalledWith('/users/24/login-audit')
+  })
+
   it('falls back to legacy plugin-user writes only when identity write proxy is not enabled', async () => {
     const { default: api, identityPluginUserApi, createPluginUser } = await import('../api/index')
     const payload = {
