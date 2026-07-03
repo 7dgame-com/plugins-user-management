@@ -82,6 +82,7 @@ export default {
       roleChangeFailed: '役割の変更に失敗しました',
       roleChangeSuccess: '役割を変更しました',
       deleteFailed: '削除に失敗しました',
+      deleteSelfNotAllowed: '現在ログイン中のユーザーは削除できません',
       deleteSuccess: '削除しました',
       loadFailed: 'ユーザー情報の読み込みに失敗しました',
       updateSuccess: '更新しました',

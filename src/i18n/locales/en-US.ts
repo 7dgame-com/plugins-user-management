@@ -82,6 +82,7 @@ export default {
       roleChangeFailed: 'Failed to change role',
       roleChangeSuccess: 'Role changed successfully',
       deleteFailed: 'Failed to delete',
+      deleteSelfNotAllowed: 'You cannot delete your own account',
       deleteSuccess: 'Deleted successfully',
       loadFailed: 'Failed to load user information',
       updateSuccess: 'Updated successfully',
