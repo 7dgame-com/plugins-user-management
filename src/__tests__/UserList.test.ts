@@ -5,7 +5,8 @@ import UserList from '../views/UserList.vue'
 
 const TABLE_ROWS_KEY = Symbol('tableRows')
 
-const { apiGet, changePluginUserRole, deletePluginUser, getPluginUserLoginAudit, verifyCurrentToken, messageError } = vi.hoisted(() => ({
+const { allowedActions, apiGet, changePluginUserRole, deletePluginUser, getPluginUserLoginAudit, verifyCurrentToken, messageError } = vi.hoisted(() => ({
+  allowedActions: new Set(['list-users']),
   apiGet: vi.fn(),
   changePluginUserRole: vi.fn(),
   deletePluginUser: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('element-plus', () => ({
 
 vi.mock('../composables/usePermissions', () => ({
   usePermissions: () => ({
-    can: (action: string) => action === 'list-users',
+    can: (action: string) => allowedActions.has(action),
   }),
 }))
 
@@ -159,8 +160,10 @@ describe('UserList', () => {
     getPluginUserLoginAudit.mockReset()
     verifyCurrentToken.mockReset()
     messageError.mockReset()
+    allowedActions.clear()
+    allowedActions.add('list-users')
 
-    verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['root'] } } })
+    verifyCurrentToken.mockResolvedValue({ data: { data: { id: 99, roles: ['root'] } } })
   })
 
   it('renders organization titles from the user list payload', async () => {
@@ -234,5 +237,24 @@ describe('UserList', () => {
     expect(wrapper.text()).toContain('user.loginAudit.title - alice')
     expect(wrapper.text()).toContain('legacy-backend')
     expect(wrapper.text()).toContain('trace-1')
+  })
+
+  it('disables deleting the current signed-in user', async () => {
+    allowedActions.add('delete-user')
+    verifyCurrentToken.mockResolvedValue({ data: { data: { id: 1, roles: ['admin'] } } })
+    apiGet.mockResolvedValue(buildListResponse([{ id: 1, title: 'Acme Studio', name: 'acme' }]))
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const deleteButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('common.delete'))
+
+    expect(deleteButton).toBeTruthy()
+    expect(deleteButton!.attributes('disabled')).toBeDefined()
+    await deleteButton!.trigger('click')
+
+    expect(deletePluginUser).not.toHaveBeenCalled()
   })
 })

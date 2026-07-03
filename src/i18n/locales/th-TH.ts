@@ -82,6 +82,7 @@ export default {
       roleChangeFailed: 'ไม่สามารถเปลี่ยนบทบาท',
       roleChangeSuccess: 'เปลี่ยนบทบาทสำเร็จ',
       deleteFailed: 'ลบล้มเหลว',
+      deleteSelfNotAllowed: 'ไม่สามารถลบผู้ใช้ที่เข้าสู่ระบบอยู่',
       deleteSuccess: 'ลบสำเร็จ',
       loadFailed: 'ไม่สามารถโหลดข้อมูลผู้ใช้',
       updateSuccess: 'อัปเดตสำเร็จ',
