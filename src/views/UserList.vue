@@ -86,11 +86,16 @@
               <el-button v-if="can('update-user')" link type="primary" @click="$router.push(`/users/${row.id}/edit`)">
                 {{ t('common.edit') }}
               </el-button>
-              <el-popconfirm v-if="can('delete-user')" :title="t('user.deleteConfirm')" @confirm="handleDelete(row.id)">
+              <el-popconfirm v-if="can('delete-user') && !isCurrentUser(row)" :title="t('user.deleteConfirm')" @confirm="handleDelete(row.id)">
                 <template #reference>
                   <el-button link type="danger">{{ t('common.delete') }}</el-button>
                 </template>
               </el-popconfirm>
+              <el-tooltip v-else-if="can('delete-user')" :content="t('user.messages.deleteSelfNotAllowed')" placement="top">
+                <span>
+                  <el-button link type="danger" disabled>{{ t('common.delete') }}</el-button>
+                </span>
+              </el-tooltip>
             </template>
           </template>
         </el-table-column>
@@ -202,6 +207,7 @@ const pageSize = ref(20)
 const total = ref(0)
 const sortField = ref('')
 const sortOrder = ref('')
+const currentUserId = ref<number | null>(null)
 const currentUserRoles = ref<string[]>([])
 const loginAuditDialogVisible = ref(false)
 const loginAuditLoading = ref(false)
@@ -239,6 +245,10 @@ function isRootUser(row: any): boolean {
   return Array.isArray(row.roles) && row.roles.includes('root')
 }
 
+function isCurrentUser(row: any): boolean {
+  return currentUserId.value !== null && Number(row?.id) === currentUserId.value
+}
+
 const availableRoleOptions = computed(() => {
   const myLevel = getRoleLevel(currentUserRoles.value)
   return Object.entries(ROLE_PRIORITY)
@@ -250,6 +260,7 @@ const availableRoleOptions = computed(() => {
 async function fetchCurrentUser() {
   try {
     const { data } = await verifyCurrentToken()
+    currentUserId.value = Number(data.data?.id) || null
     currentUserRoles.value = data.data?.roles || []
   } catch {
     // silent
@@ -291,6 +302,11 @@ async function handleRoleChange(row: any, newRole: string) {
 }
 
 async function handleDelete(id: number) {
+  if (currentUserId.value !== null && Number(id) === currentUserId.value) {
+    ElMessage.error(t('user.messages.deleteSelfNotAllowed'))
+    return
+  }
+
   try {
     await deletePluginUser(id)
     ElMessage.success(t('user.messages.deleteSuccess'))

@@ -81,6 +81,7 @@ export default {
       roleChangeFailed: '角色修改失敗',
       roleChangeSuccess: '角色修改成功',
       deleteFailed: '刪除失敗',
+      deleteSelfNotAllowed: '不能刪除目前登入使用者',
       deleteSuccess: '刪除成功',
       loadFailed: '載入使用者資訊失敗',
       updateSuccess: '更新成功',
