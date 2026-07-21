@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { AxiosRequestConfig } from 'axios'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('../utils/token', async (importOriginal) => {
@@ -277,5 +278,49 @@ describe('Preservation', () => {
     await expect(updatePluginUser(payload)).rejects.toBeTruthy()
 
     expect(legacyPostSpy).not.toHaveBeenCalled()
+  })
+
+  it('reuses one correlation id when a role write falls back to the legacy route', async () => {
+    const { default: api, identityPluginUserApi, changePluginUserRole } = await import('../api/index')
+    const identityPostSpy = vi.spyOn(identityPluginUserApi, 'post').mockRejectedValue({
+      response: {
+        status: 404,
+        data: {
+          code: 'PLUGIN_USER_WRITE_DISABLED',
+          message: 'Plugin user write migration is disabled.',
+        },
+      },
+      isAxiosError: true,
+    })
+    const legacyPostSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { code: 0 } } as any)
+
+    await changePluginUserRole(25, 'manager')
+
+    const identityConfig = identityPostSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const legacyConfig = legacyPostSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const identityCorrelation = (identityConfig.headers as Record<string, string>)['X-Identity-IAM-Role-Write-Correlation']
+    const legacyCorrelation = (legacyConfig.headers as Record<string, string>)['X-Identity-IAM-Role-Write-Correlation']
+    expect(identityCorrelation).toMatch(/^[A-Za-z0-9._:-]{8,128}$/)
+    expect(legacyCorrelation).toBe(identityCorrelation)
+  })
+
+  it('previews the actual iframe operator selector without performing a write', async () => {
+    const { identityPluginUserApi, getRoleWriteDecisionPreview } = await import('../api/index')
+    const getSpy = vi.spyOn(identityPluginUserApi, 'get').mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          writePerformed: false,
+          selected: true,
+          reason: 'canary_actor_selected',
+        },
+      },
+    } as any)
+
+    await getRoleWriteDecisionPreview('phase4-preview-correlation')
+
+    expect(getSpy).toHaveBeenCalledWith('/role-write-decision', {
+      headers: { 'X-Identity-IAM-Role-Write-Correlation': 'phase4-preview-correlation' },
+    })
   })
 })

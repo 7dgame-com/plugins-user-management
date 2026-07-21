@@ -273,6 +273,27 @@ export function changePluginUserRole(id: string | number, role: string): Promise
   return postPluginUserWrite('/change-role', { id, role })
 }
 
+export interface RoleWriteDecisionPreview {
+  writePerformed: false
+  sourceOfTruth: 'legacy'
+  roleWriteMode: string
+  rolloutMode: string
+  selected: boolean
+  reason: string
+  correlationId: string
+  route: 'change-role'
+  actorFingerprint: string | null
+  matchedSelectorKind: string | null
+}
+
+export function getRoleWriteDecisionPreview(correlationId = createRoleWriteCorrelationId()): Promise<{
+  data: { code: number; data: RoleWriteDecisionPreview }
+}> {
+  return identityPluginUserApi.get('/role-write-decision', {
+    headers: { 'X-Identity-IAM-Role-Write-Correlation': correlationId },
+  })
+}
+
 export function getPluginUsers(params?: Record<string, unknown>): Promise<{ data: any }> {
   return getPluginUserReadonly('/users', params)
 }
@@ -336,12 +357,38 @@ function postPluginUserWrite(
   payload: unknown,
   config?: AxiosRequestConfig
 ): Promise<{ data: any }> {
-  return identityPluginUserApi.post(path, payload, config).catch((err: AxiosError) => {
+  const requestConfig = path === '/change-role'
+    ? withRoleWriteCorrelation(config)
+    : config
+
+  return identityPluginUserApi.post(path, payload, requestConfig).catch((err: AxiosError) => {
     if (shouldFallbackToLegacyPluginUserWrite(err)) {
-      return userApi.post(path, payload, config)
+      return userApi.post(path, payload, requestConfig)
     }
     return Promise.reject(err)
   })
+}
+
+function withRoleWriteCorrelation(config?: AxiosRequestConfig): AxiosRequestConfig {
+  const headers = { ...(config?.headers as Record<string, unknown> | undefined) }
+  const existing = headers['X-Identity-IAM-Role-Write-Correlation']
+  return {
+    ...config,
+    headers: {
+      ...headers,
+      'X-Identity-IAM-Role-Write-Correlation':
+        typeof existing === 'string' && existing.length > 0
+          ? existing
+          : createRoleWriteCorrelationId(),
+    },
+  }
+}
+
+function createRoleWriteCorrelationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `role-write-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
 }
 
 function shouldFallbackToLegacyPluginUser(err: AxiosError): boolean {
