@@ -177,6 +177,34 @@
       </el-table>
     </div>
 
+    <!-- Phase 4 role-write zero-write preview -->
+    <div class="section">
+      <h3>角色写入零写入预检</h3>
+      <p class="hint">
+        使用当前 iframe 登录 Token 调用 Identity decision preview；该请求只返回 rollout 决策，不执行角色写入。
+      </p>
+      <el-button type="primary" :loading="roleWritePreviewLoading" @click="runRoleWritePreview">
+        执行零写入预检
+      </el-button>
+      <el-alert
+        v-if="roleWritePreviewError"
+        :title="roleWritePreviewError"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-top: 12px"
+      />
+      <div v-if="roleWritePreviewResult" class="custom-result">
+        <div>
+          门禁：
+          <el-tag :type="roleWritePreviewPassed ? 'success' : 'danger'" size="small">
+            {{ roleWritePreviewPassed ? 'PASS' : 'STOP' }}
+          </el-tag>
+        </div>
+        <pre>{{ JSON.stringify(roleWritePreviewResult, null, 2) }}</pre>
+      </div>
+    </div>
+
     <!-- 原始 fetch 测试 -->
     <div class="section">
       <h3>原始 Fetch 测试（绕过 Axios）</h3>
@@ -239,7 +267,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import api, { identityPluginUserApi, mainApi } from '../api'
+import api, { getRoleWriteDecisionPreview, identityPluginUserApi, mainApi, type RoleWriteDecisionPreview } from '../api'
 import { getToken, isInIframe } from '../utils/token'
 
 // ---- 环境信息 ----
@@ -339,6 +367,40 @@ async function runAll() {
     await runSingle(t)
   }
   runningAll.value = false
+}
+
+// ---- Phase 4 role-write zero-write preview ----
+const roleWritePreviewLoading = ref(false)
+const roleWritePreviewResult = ref<RoleWriteDecisionPreview | null>(null)
+const roleWritePreviewPassed = ref(false)
+const roleWritePreviewError = ref('')
+
+async function runRoleWritePreview() {
+  roleWritePreviewLoading.value = true
+  roleWritePreviewResult.value = null
+  roleWritePreviewPassed.value = false
+  roleWritePreviewError.value = ''
+
+  try {
+    const response = await getRoleWriteDecisionPreview()
+    const preview = response.data.data
+    roleWritePreviewResult.value = preview
+    roleWritePreviewPassed.value = preview.writePerformed === false
+      && preview.sourceOfTruth === 'legacy'
+      && preview.roleWriteMode === 'dual-write'
+      && preview.rolloutMode === 'canary'
+      && preview.selected === true
+      && preview.reason === 'canary_actor_selected'
+      && preview.matchedSelectorKind === 'uid'
+      && typeof preview.actorFingerprint === 'string'
+      && /^[a-f0-9]{16}$/.test(preview.actorFingerprint)
+  } catch (err: any) {
+    const status = err.response?.status
+    const message = err.response?.data?.message || err.message || String(err)
+    roleWritePreviewError.value = status ? `HTTP ${status}: ${message}` : message
+  } finally {
+    roleWritePreviewLoading.value = false
+  }
 }
 
 // ---- 原始 Fetch 测试 ----
