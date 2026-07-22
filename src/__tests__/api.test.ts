@@ -325,19 +325,10 @@ describe('Preservation', () => {
     })
   })
 
-  it('arms one guarded role write from a passing preview and records complete identity evidence', async () => {
-    const {
-      armNextRoleWriteCanary,
-      changePluginUserRole,
-      getArmedRoleWriteCanary,
-      getLastRoleWriteRequestEvidence,
-      identityPluginUserApi,
-    } = await import('../api/index')
-    const correlationId = 'phase4-guarded-role-write-correlation'
-    const actorFingerprint = '0123456789abcdef'
-    armNextRoleWriteCanary({
-      writePerformed: false,
-      sourceOfTruth: 'legacy',
+  function passingRoleWritePreview(correlationId: string, actorFingerprint: string) {
+    return {
+      writePerformed: false as const,
+      sourceOfTruth: 'legacy' as const,
       roleWriteMode: 'dual-write',
       rolloutMode: 'canary',
       selected: true,
@@ -345,11 +336,87 @@ describe('Preservation', () => {
       dualWriteExecutable: true,
       missingCapabilities: [],
       correlationId,
-      route: 'change-role',
+      route: 'change-role' as const,
       actorFingerprint,
       matchedSelectorKind: 'uid',
+    }
+  }
+
+  async function armAndClaimThroughHost(
+    apiModule: typeof import('../api/index'),
+    correlationId: string,
+    actorFingerprint: string,
+  ) {
+    const armPromise = apiModule.armNextRoleWriteCanary(
+      passingRoleWritePreview(correlationId, actorFingerprint),
+    )
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_ACK', {
+      accepted: true,
+      correlationId,
+      actorFingerprint,
+    })).toBe(true)
+    const armed = await armPromise
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+
+    window.history.replaceState({}, '', '/users')
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', {
+      ...armed,
+      targetPath: '/users',
+    })).toBe(true)
+    expect(apiModule.getArmedRoleWriteCanary()).toMatchObject({
+      correlationId,
+      actorFingerprint,
+      handoffClaimed: true,
     })
-    const postSpy = vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
+  }
+
+  it('requires a host acknowledgement and a new-iframe handoff before arming a write', async () => {
+    const apiModule = await import('../api/index')
+    const correlationId = 'phase4-host-mediated-handoff'
+    const actorFingerprint = '0123456789abcdef'
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage')
+
+    const armPromise = apiModule.armNextRoleWriteCanary(
+      passingRoleWritePreview(correlationId, actorFingerprint),
+    )
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLE_WRITE_CANARY_ARM_REQUEST',
+        payload: expect.objectContaining({ correlationId, targetPath: '/users' }),
+      }),
+      '*',
+    )
+
+    apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_ACK', {
+      accepted: true,
+      correlationId,
+      actorFingerprint,
+    })
+    const armed = await armPromise
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+
+    window.history.replaceState({}, '', '/users')
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', {
+      ...armed,
+      targetPath: '/users',
+    })).toBe(true)
+    expect(apiModule.getArmedRoleWriteCanary()).toMatchObject({ handoffClaimed: true })
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLE_WRITE_CANARY_HANDOFF_CLAIMED',
+        payload: { correlationId, actorFingerprint },
+      }),
+      '*',
+    )
+  })
+
+  it('records complete evidence only after a host handoff was claimed', async () => {
+    const apiModule = await import('../api/index')
+    const correlationId = 'phase4-host-handoff-evidence'
+    const actorFingerprint = '0123456789abcdef'
+    await armAndClaimThroughHost(apiModule, correlationId, actorFingerprint)
+    const postSpy = vi.spyOn(apiModule.identityPluginUserApi, 'post').mockResolvedValue({
       status: 200,
       data: { code: 0 },
       headers: {
@@ -364,16 +431,15 @@ describe('Preservation', () => {
       },
     } as any)
 
-    await changePluginUserRole(25, 'manager')
+    await apiModule.changePluginUserRole(25, 'manager')
 
     const requestConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
     expect(requestConfig.headers).toMatchObject({
       'X-Identity-IAM-Role-Write-Correlation': correlationId,
       'X-Identity-IAM-Role-Write-Require-Dual-Write': '1',
     })
-    expect(getArmedRoleWriteCanary()).toBeNull()
-    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
-    expect(getLastRoleWriteRequestEvidence()).toMatchObject({
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+    expect(apiModule.getLastRoleWriteRequestEvidence()).toMatchObject({
       correlationId,
       actorFingerprint,
       matchedSelectorKind: 'uid',
@@ -381,113 +447,23 @@ describe('Preservation', () => {
       fallbackUsed: false,
       identityStatus: 200,
       guarded: true,
-      armHandoffClaimed: false,
-      evidenceComplete: true,
-    })
-  })
-
-  it('claims a passing guarded arm once after the host recreates the plugin iframe', async () => {
-    const {
-      armNextRoleWriteCanary,
-      getArmedRoleWriteCanary,
-    } = await import('../api/index')
-    const correlationId = 'phase4-iframe-handoff-correlation'
-    const actorFingerprint = '0123456789abcdef'
-    armNextRoleWriteCanary({
-      writePerformed: false,
-      sourceOfTruth: 'legacy',
-      roleWriteMode: 'dual-write',
-      rolloutMode: 'canary',
-      selected: true,
-      reason: 'canary_actor_selected',
-      dualWriteExecutable: true,
-      missingCapabilities: [],
-      correlationId,
-      route: 'change-role',
-      actorFingerprint,
-      matchedSelectorKind: 'uid',
-    })
-
-    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).not.toBeNull()
-    sessionStorage.clear()
-
-    expect(getArmedRoleWriteCanary()).toMatchObject({ correlationId, actorFingerprint, handoffClaimed: true })
-    expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).not.toBeNull()
-    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
-  })
-
-  it('records that a guarded write consumed an iframe handoff arm', async () => {
-    const {
-      armNextRoleWriteCanary,
-      changePluginUserRole,
-      getLastRoleWriteRequestEvidence,
-      identityPluginUserApi,
-    } = await import('../api/index')
-    const correlationId = 'phase4-iframe-handoff-evidence'
-    const actorFingerprint = '0123456789abcdef'
-    armNextRoleWriteCanary({
-      writePerformed: false,
-      sourceOfTruth: 'legacy',
-      roleWriteMode: 'dual-write',
-      rolloutMode: 'canary',
-      selected: true,
-      reason: 'canary_actor_selected',
-      dualWriteExecutable: true,
-      missingCapabilities: [],
-      correlationId,
-      route: 'change-role',
-      actorFingerprint,
-      matchedSelectorKind: 'uid',
-    })
-    sessionStorage.clear()
-    vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
-      status: 200,
-      data: { code: 0 },
-      headers: {
-        'x-identity-iam-role-write-correlation': correlationId,
-        'x-identity-iam-role-write-route': 'change-role',
-        'x-identity-iam-role-write': 'dual-write',
-        'x-identity-iam-role-write-decision': 'canary_actor_selected',
-        'x-identity-iam-role-write-entry': 'plugin-user-change-role',
-        'x-identity-iam-role-write-actor': actorFingerprint,
-        'x-identity-iam-role-write-selector-kind': 'uid',
-        'x-xrugc-upstream-host': 'identity.d.xrteeth.com',
-      },
-    } as any)
-
-    await changePluginUserRole(25, 'manager')
-
-    expect(getLastRoleWriteRequestEvidence()).toMatchObject({
-      guarded: true,
       armHandoffClaimed: true,
       evidenceComplete: true,
     })
   })
 
-  it('never falls back to the legacy route when a guarded role write is rejected', async () => {
+  it('never falls back to the legacy route when a host-guarded role write is rejected', async () => {
     const {
       default: api,
-      armNextRoleWriteCanary,
       changePluginUserRole,
       getArmedRoleWriteCanary,
       getLastRoleWriteRequestEvidence,
       identityPluginUserApi,
     } = await import('../api/index')
     const correlationId = 'phase4-guarded-role-write-rejected'
-    armNextRoleWriteCanary({
-      writePerformed: false,
-      sourceOfTruth: 'legacy',
-      roleWriteMode: 'dual-write',
-      rolloutMode: 'canary',
-      selected: true,
-      reason: 'canary_actor_selected',
-      dualWriteExecutable: true,
-      missingCapabilities: [],
-      correlationId,
-      route: 'change-role',
-      actorFingerprint: 'fedcba9876543210',
-      matchedSelectorKind: 'uid',
-    })
+    const actorFingerprint = 'fedcba9876543210'
+    const apiModule = await import('../api/index')
+    await armAndClaimThroughHost(apiModule, correlationId, actorFingerprint)
     vi.spyOn(identityPluginUserApi, 'post').mockRejectedValue({
       response: {
         status: 409,
@@ -502,15 +478,41 @@ describe('Preservation', () => {
 
     expect(legacyPostSpy).not.toHaveBeenCalled()
     expect(getArmedRoleWriteCanary()).toBeNull()
-    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
     expect(getLastRoleWriteRequestEvidence()).toMatchObject({
       fallbackUsed: false,
       identityStatus: 409,
       failureCode: 'IAM_ROLE_WRITE_DUAL_WRITE_REQUIRED',
       guarded: true,
-      armHandoffClaimed: false,
+      armHandoffClaimed: true,
       evidenceComplete: false,
     })
+  })
+
+  it('fails closed when the host rejects or does not acknowledge the arm request', async () => {
+    const apiModule = await import('../api/index')
+    const correlationId = 'phase4-host-rejected-handoff'
+    const actorFingerprint = '0123456789abcdef'
+    const rejected = apiModule.armNextRoleWriteCanary(
+      passingRoleWritePreview(correlationId, actorFingerprint),
+    )
+    apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_ACK', {
+      accepted: false,
+    })
+    await expect(rejected).rejects.toThrow('host rejected')
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+
+    vi.useFakeTimers()
+    try {
+      const timedOut = apiModule.armNextRoleWriteCanary(
+        passingRoleWritePreview('phase4-host-timeout-handoff', actorFingerprint),
+      )
+      const timeoutAssertion = expect(timedOut).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(3001)
+      await timeoutAssertion
+      expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not arm a guarded role write when preview is selected but gate is incomplete', async () => {
@@ -565,17 +567,49 @@ describe('Preservation', () => {
     expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).toBeNull()
   })
 
-  it('discards an expired iframe handoff instead of restoring a guarded write', async () => {
-    const { getArmedRoleWriteCanary } = await import('../api/index')
-    localStorage.setItem('user-mgmt-role-write-canary-arm-handoff-v1', JSON.stringify({
+  it('rejects an expired handoff, a wrong target route, or unavailable session storage', async () => {
+    const apiModule = await import('../api/index')
+    window.history.replaceState({}, '', '/users')
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', {
       correlationId: 'phase4-expired-iframe-handoff',
       actorFingerprint: '0123456789abcdef',
       matchedSelectorKind: 'uid',
       armedAt: '2026-01-01T00:00:00.000Z',
       expiresAt: '2026-01-01T00:05:00.000Z',
-    }))
+      handoffClaimed: false,
+      targetPath: '/users',
+    })).toBe(false)
 
-    expect(getArmedRoleWriteCanary()).toBeNull()
-    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
+    const future = new Date(Date.now() + 60 * 1000)
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', {
+      correlationId: 'phase4-future-iframe-handoff',
+      actorFingerprint: '0123456789abcdef',
+      matchedSelectorKind: 'uid',
+      armedAt: future.toISOString(),
+      expiresAt: new Date(future.getTime() + 5 * 60 * 1000).toISOString(),
+      handoffClaimed: false,
+      targetPath: '/users',
+    })).toBe(false)
+
+    const now = new Date()
+    const validPayload = {
+      correlationId: 'phase4-wrong-route-handoff',
+      actorFingerprint: '0123456789abcdef',
+      matchedSelectorKind: 'uid',
+      armedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 5 * 60 * 1000).toISOString(),
+      handoffClaimed: false,
+      targetPath: '/users',
+    }
+    window.history.replaceState({}, '', '/api-diagnostics')
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', validPayload)).toBe(false)
+
+    window.history.replaceState({}, '', '/users')
+    const storageSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked')
+    })
+    expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', validPayload)).toBe(false)
+    storageSpy.mockRestore()
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
   })
 })

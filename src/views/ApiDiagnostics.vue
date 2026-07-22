@@ -444,7 +444,7 @@ async function runRoleWritePreview() {
       && typeof preview.actorFingerprint === 'string'
       && /^[a-f0-9]{16}$/.test(preview.actorFingerprint)
     if (roleWritePreviewPassed.value) {
-      armNextRoleWriteCanary(preview)
+      await armNextRoleWriteCanary(preview)
       roleWriteCanaryArmed.value = true
     }
   } catch (err: any) {

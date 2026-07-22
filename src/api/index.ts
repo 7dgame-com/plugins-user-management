@@ -36,9 +36,20 @@ const mainApi = axios.create({
 })
 
 const ROLE_WRITE_CANARY_ARM_STORAGE_KEY = 'user-mgmt-role-write-canary-arm-v1'
-const ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY = 'user-mgmt-role-write-canary-arm-handoff-v1'
 const ROLE_WRITE_EVIDENCE_STORAGE_KEY = 'user-mgmt-role-write-evidence-v1'
 const ROLE_WRITE_CANARY_ARM_TTL_MS = 5 * 60 * 1000
+const ROLE_WRITE_CANARY_CLOCK_SKEW_MS = 30 * 1000
+const ROLE_WRITE_CANARY_HOST_ACK_TIMEOUT_MS = 3000
+const ROLE_WRITE_CANARY_TARGET_PATH = '/users'
+
+interface PendingHostRoleWriteArm {
+  armed: ArmedRoleWriteCanary
+  resolve: (armed: ArmedRoleWriteCanary) => void
+  reject: (error: Error) => void
+  timeoutId: ReturnType<typeof setTimeout>
+}
+
+let pendingHostRoleWriteArm: PendingHostRoleWriteArm | null = null
 
 // --- Token refresh state ---
 let isRefreshing = false
@@ -328,9 +339,12 @@ export function getRoleWriteDecisionPreview(correlationId = createRoleWriteCorre
   })
 }
 
-export function armNextRoleWriteCanary(preview: RoleWriteDecisionPreview): ArmedRoleWriteCanary {
+export function armNextRoleWriteCanary(preview: RoleWriteDecisionPreview): Promise<ArmedRoleWriteCanary> {
   if (!isPassingRoleWritePreview(preview)) {
     throw new Error('Role-write canary can only be armed from a passing zero-write preview.')
+  }
+  if (!isInIframe()) {
+    throw new Error('Role-write canary requires the authenticated plugin host.')
   }
   const armedAt = new Date()
   const armed: ArmedRoleWriteCanary = {
@@ -341,13 +355,26 @@ export function armNextRoleWriteCanary(preview: RoleWriteDecisionPreview): Armed
     expiresAt: new Date(armedAt.getTime() + ROLE_WRITE_CANARY_ARM_TTL_MS).toISOString(),
     handoffClaimed: false,
   }
-  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, armed)) {
-    throw new Error('Role-write canary could not be armed in this browser session.')
-  }
-  // The host can recreate the plugin iframe while the operator moves from diagnostics
-  // to the users page. This is only a short-lived, non-secret handoff copy.
-  safeLocalSet(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY, armed)
-  return armed
+
+  rejectPendingHostRoleWriteArm(new Error('A newer role-write preview replaced the pending request.'))
+  safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+
+  return new Promise<ArmedRoleWriteCanary>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      if (pendingHostRoleWriteArm?.armed.correlationId !== armed.correlationId) return
+      pendingHostRoleWriteArm = null
+      postRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_CANCEL', {
+        correlationId: armed.correlationId,
+      })
+      reject(new Error('Role-write canary host acknowledgement timed out.'))
+    }, ROLE_WRITE_CANARY_HOST_ACK_TIMEOUT_MS)
+
+    pendingHostRoleWriteArm = { armed, resolve, reject, timeoutId }
+    postRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_REQUEST', {
+      ...armed,
+      targetPath: ROLE_WRITE_CANARY_TARGET_PATH,
+    })
+  })
 }
 
 export function getArmedRoleWriteCanary(): ArmedRoleWriteCanary | null {
@@ -357,25 +384,64 @@ export function getArmedRoleWriteCanary(): ArmedRoleWriteCanary | null {
   }
 
   safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
-  const handoffArm = safeLocalGet<ArmedRoleWriteCanary>(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
-  if (!isValidRoleWriteCanaryArm(handoffArm)) {
-    safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
-    return null
-  }
-
-  // Claim the handoff in the newly-created iframe. Requiring session storage here
-  // preserves the original one-session guard even when local storage is available.
-  const claimedHandoffArm: ArmedRoleWriteCanary = { ...handoffArm, handoffClaimed: true }
-  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, claimedHandoffArm)) {
-    return null
-  }
-  safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
-  return claimedHandoffArm
+  return null
 }
 
 export function clearArmedRoleWriteCanary(): void {
+  const sessionArm = safeSessionGet<ArmedRoleWriteCanary>(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+  const pendingCorrelationId = pendingHostRoleWriteArm?.armed.correlationId
+  rejectPendingHostRoleWriteArm(new Error('Role-write canary was cleared.'))
   safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
-  safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
+  postRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_CANCEL', {
+    correlationId: sessionArm?.correlationId ?? pendingCorrelationId,
+  })
+}
+
+export function handleRoleWriteHostMessage(
+  type: string,
+  payload: Record<string, unknown>
+): boolean {
+  if (type === 'ROLE_WRITE_CANARY_ARM_ACK') {
+    const pending = pendingHostRoleWriteArm
+    if (!pending) return false
+    if (
+      payload.accepted !== true
+      || payload.correlationId !== pending.armed.correlationId
+      || payload.actorFingerprint !== pending.armed.actorFingerprint
+    ) {
+      rejectPendingHostRoleWriteArm(new Error('Role-write canary host rejected the handoff request.'))
+      return false
+    }
+    clearTimeout(pending.timeoutId)
+    pendingHostRoleWriteArm = null
+    pending.resolve(pending.armed)
+    return true
+  }
+
+  if (type !== 'ROLE_WRITE_CANARY_HANDOFF') {
+    return false
+  }
+
+  const targetPath = payload.targetPath
+  const handoff = payload as unknown as ArmedRoleWriteCanary
+  if (
+    targetPath !== ROLE_WRITE_CANARY_TARGET_PATH
+    || normalizeRoleWritePath(window.location.pathname) !== ROLE_WRITE_CANARY_TARGET_PATH
+    || handoff.handoffClaimed !== false
+    || !isValidRoleWriteCanaryArm(handoff)
+  ) {
+    return false
+  }
+
+  const claimedHandoff: ArmedRoleWriteCanary = { ...handoff, handoffClaimed: true }
+  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, claimedHandoff)) {
+    return false
+  }
+  postRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF_CLAIMED', {
+    correlationId: claimedHandoff.correlationId,
+    actorFingerprint: claimedHandoff.actorFingerprint,
+  })
+  return true
 }
 
 export function getLastRoleWriteRequestEvidence(): RoleWriteRequestEvidence | null {
@@ -535,6 +601,7 @@ function recordRoleWriteEvidence(
     armHandoffClaimed: Boolean(armed?.handoffClaimed),
     evidenceComplete: Boolean(
       armed
+      && armed.handoffClaimed === true
       && !context.fallbackUsed
       && context.identityStatus !== null
       && context.identityStatus >= 200
@@ -584,6 +651,8 @@ function isSafeCorrelationId(value: unknown): value is string {
 }
 
 function isValidRoleWriteCanaryArm(armed: ArmedRoleWriteCanary | null): armed is ArmedRoleWriteCanary {
+  const now = Date.now()
+  const armedAt = Date.parse(armed?.armedAt ?? '')
   const expiresAt = Date.parse(armed?.expiresAt ?? '')
   return Boolean(
     armed
@@ -591,8 +660,13 @@ function isValidRoleWriteCanaryArm(armed: ArmedRoleWriteCanary | null): armed is
     && /^[a-f0-9]{16}$/.test(armed.actorFingerprint)
     && armed.matchedSelectorKind === 'uid'
     && typeof armed.handoffClaimed === 'boolean'
+    && Number.isFinite(armedAt)
     && Number.isFinite(expiresAt)
-    && expiresAt > Date.now()
+    && armedAt <= now + ROLE_WRITE_CANARY_CLOCK_SKEW_MS
+    && expiresAt > armedAt
+    && expiresAt > now
+    && expiresAt - armedAt <= ROLE_WRITE_CANARY_ARM_TTL_MS
+    && expiresAt <= now + ROLE_WRITE_CANARY_ARM_TTL_MS + ROLE_WRITE_CANARY_CLOCK_SKEW_MS
   )
 }
 
@@ -622,30 +696,25 @@ function safeSessionRemove(key: string): void {
   }
 }
 
-function safeLocalSet(key: string, value: unknown): boolean {
-  try {
-    localStorage.setItem(key, JSON.stringify(value))
-    return localStorage.getItem(key) !== null
-  } catch {
-    return false
-  }
+function rejectPendingHostRoleWriteArm(error: Error): void {
+  const pending = pendingHostRoleWriteArm
+  if (!pending) return
+  clearTimeout(pending.timeoutId)
+  pendingHostRoleWriteArm = null
+  pending.reject(error)
 }
 
-function safeLocalGet<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key)
-    return raw ? JSON.parse(raw) as T : null
-  } catch {
-    return null
-  }
+function postRoleWriteHostMessage(type: string, payload: Record<string, unknown>): void {
+  window.parent.postMessage({
+    type,
+    id: `role-write-host-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    payload,
+  }, '*')
 }
 
-function safeLocalRemove(key: string): void {
-  try {
-    localStorage.removeItem(key)
-  } catch {
-    // Ignore storage policy failures.
-  }
+function normalizeRoleWritePath(path: string): string {
+  const normalized = path.replace(/\/+$/, '')
+  return normalized || '/'
 }
 
 function createRoleWriteCorrelationId(): string {
