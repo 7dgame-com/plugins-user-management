@@ -111,6 +111,8 @@ generate_lb_config() {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header X-XRUGC-Upstream-Host ${host} always;
+        add_header X-Upstream-Addr \$upstream_addr always;
 
         # 超时配置
         proxy_connect_timeout 5s;
@@ -256,6 +258,8 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header X-XRUGC-Upstream-Host \$${PREFIX_NAME}_backend_host always;
+        add_header X-Upstream-Addr \$upstream_addr always;
 
         # 超时配置（快速失败以便切 failover）
         proxy_connect_timeout 5s;
@@ -278,6 +282,8 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        add_header X-XRUGC-Upstream-Host \$${PREFIX_NAME}_fb_host always;
+        add_header X-Upstream-Addr \$upstream_addr always;
 
         # 超时配置
         proxy_connect_timeout 5s;

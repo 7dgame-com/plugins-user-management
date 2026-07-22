@@ -12,7 +12,7 @@ vi.mock('../utils/token', async (importOriginal) => {
 })
 
 describe('Bug Condition Exploration', () => {
-  beforeEach(() => { localStorage.clear(); vi.clearAllMocks() })
+  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks() })
   afterEach(() => { vi.restoreAllMocks() })
 
   it('Bug 2: TOKEN_EXPIRED should NOT be sent when local refresh token exists', async () => {
@@ -61,6 +61,7 @@ describe('Bug Condition Exploration', () => {
 describe('Preservation', () => {
   beforeEach(async () => {
     localStorage.clear()
+    sessionStorage.clear()
     vi.clearAllMocks()
     const m = await import('../utils/token')
     vi.mocked(m.isInIframe).mockReturnValue(true)
@@ -322,5 +323,135 @@ describe('Preservation', () => {
     expect(getSpy).toHaveBeenCalledWith('/role-write-decision', {
       headers: { 'X-Identity-IAM-Role-Write-Correlation': 'phase4-preview-correlation' },
     })
+  })
+
+  it('arms one guarded role write from a passing preview and records complete identity evidence', async () => {
+    const {
+      armNextRoleWriteCanary,
+      changePluginUserRole,
+      getArmedRoleWriteCanary,
+      getLastRoleWriteRequestEvidence,
+      identityPluginUserApi,
+    } = await import('../api/index')
+    const correlationId = 'phase4-guarded-role-write-correlation'
+    const actorFingerprint = '0123456789abcdef'
+    armNextRoleWriteCanary({
+      writePerformed: false,
+      sourceOfTruth: 'legacy',
+      roleWriteMode: 'dual-write',
+      rolloutMode: 'canary',
+      selected: true,
+      reason: 'canary_actor_selected',
+      correlationId,
+      route: 'change-role',
+      actorFingerprint,
+      matchedSelectorKind: 'uid',
+    })
+    const postSpy = vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
+      status: 200,
+      data: { code: 0 },
+      headers: {
+        'x-identity-iam-role-write-correlation': correlationId,
+        'x-identity-iam-role-write-route': 'change-role',
+        'x-identity-iam-role-write': 'dual-write',
+        'x-identity-iam-role-write-decision': 'canary_actor_selected',
+        'x-identity-iam-role-write-entry': 'plugin-user-change-role',
+        'x-identity-iam-role-write-actor': actorFingerprint,
+        'x-identity-iam-role-write-selector-kind': 'uid',
+        'x-xrugc-upstream-host': 'identity.d.xrteeth.com',
+      },
+    } as any)
+
+    await changePluginUserRole(25, 'manager')
+
+    const requestConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    expect(requestConfig.headers).toMatchObject({
+      'X-Identity-IAM-Role-Write-Correlation': correlationId,
+      'X-Identity-IAM-Role-Write-Require-Dual-Write': '1',
+    })
+    expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(getLastRoleWriteRequestEvidence()).toMatchObject({
+      correlationId,
+      actorFingerprint,
+      matchedSelectorKind: 'uid',
+      upstreamHost: 'identity.d.xrteeth.com',
+      fallbackUsed: false,
+      identityStatus: 200,
+      guarded: true,
+      evidenceComplete: true,
+    })
+  })
+
+  it('never falls back to the legacy route when a guarded role write is rejected', async () => {
+    const {
+      default: api,
+      armNextRoleWriteCanary,
+      changePluginUserRole,
+      getArmedRoleWriteCanary,
+      getLastRoleWriteRequestEvidence,
+      identityPluginUserApi,
+    } = await import('../api/index')
+    const correlationId = 'phase4-guarded-role-write-rejected'
+    armNextRoleWriteCanary({
+      writePerformed: false,
+      sourceOfTruth: 'legacy',
+      roleWriteMode: 'dual-write',
+      rolloutMode: 'canary',
+      selected: true,
+      reason: 'canary_actor_selected',
+      correlationId,
+      route: 'change-role',
+      actorFingerprint: 'fedcba9876543210',
+      matchedSelectorKind: 'uid',
+    })
+    vi.spyOn(identityPluginUserApi, 'post').mockRejectedValue({
+      response: {
+        status: 409,
+        data: { code: 'IAM_ROLE_WRITE_DUAL_WRITE_REQUIRED' },
+        headers: {},
+      },
+      isAxiosError: true,
+    })
+    const legacyPostSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { code: 0 } } as any)
+
+    await expect(changePluginUserRole(25, 'manager')).rejects.toBeTruthy()
+
+    expect(legacyPostSpy).not.toHaveBeenCalled()
+    expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(getLastRoleWriteRequestEvidence()).toMatchObject({
+      fallbackUsed: false,
+      identityStatus: 409,
+      failureCode: 'IAM_ROLE_WRITE_DUAL_WRITE_REQUIRED',
+      guarded: true,
+      evidenceComplete: false,
+    })
+  })
+
+  it('discards an expired role-write canary arm before the next request', async () => {
+    const { getArmedRoleWriteCanary } = await import('../api/index')
+    sessionStorage.setItem('user-mgmt-role-write-canary-arm-v1', JSON.stringify({
+      correlationId: 'phase4-expired-role-write-arm',
+      actorFingerprint: '0123456789abcdef',
+      matchedSelectorKind: 'uid',
+      armedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-01T00:05:00.000Z',
+    }))
+
+    expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).toBeNull()
+  })
+
+  it('discards a malformed role-write canary expiry instead of treating it as active', async () => {
+    const { getArmedRoleWriteCanary } = await import('../api/index')
+    sessionStorage.setItem('user-mgmt-role-write-canary-arm-v1', JSON.stringify({
+      correlationId: 'phase4-malformed-role-write-arm',
+      actorFingerprint: '0123456789abcdef',
+      matchedSelectorKind: 'uid',
+      armedAt: new Date().toISOString(),
+      expiresAt: 'not-a-date',
+    }))
+
+    expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).toBeNull()
   })
 })

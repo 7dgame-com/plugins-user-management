@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
+import type { AxiosError, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import {
   getToken,
   setToken,
@@ -34,6 +34,10 @@ const mainApi = axios.create({
   baseURL: '/api/v1',
   timeout: 10000
 })
+
+const ROLE_WRITE_CANARY_ARM_STORAGE_KEY = 'user-mgmt-role-write-canary-arm-v1'
+const ROLE_WRITE_EVIDENCE_STORAGE_KEY = 'user-mgmt-role-write-evidence-v1'
+const ROLE_WRITE_CANARY_ARM_TTL_MS = 5 * 60 * 1000
 
 // --- Token refresh state ---
 let isRefreshing = false
@@ -286,12 +290,74 @@ export interface RoleWriteDecisionPreview {
   matchedSelectorKind: string | null
 }
 
+export interface ArmedRoleWriteCanary {
+  correlationId: string
+  actorFingerprint: string
+  matchedSelectorKind: 'uid'
+  armedAt: string
+  expiresAt: string
+}
+
+export interface RoleWriteRequestEvidence {
+  recordedAt: string
+  correlationId: string | null
+  route: string | null
+  mode: string | null
+  decision: string | null
+  entry: string | null
+  actorFingerprint: string | null
+  matchedSelectorKind: string | null
+  upstreamHost: string | null
+  fallbackUsed: boolean
+  identityStatus: number | null
+  failureCode: string | null
+  guarded: boolean
+  evidenceComplete: boolean
+}
+
 export function getRoleWriteDecisionPreview(correlationId = createRoleWriteCorrelationId()): Promise<{
   data: { code: number; data: RoleWriteDecisionPreview }
 }> {
   return identityPluginUserApi.get('/role-write-decision', {
     headers: { 'X-Identity-IAM-Role-Write-Correlation': correlationId },
   })
+}
+
+export function armNextRoleWriteCanary(preview: RoleWriteDecisionPreview): ArmedRoleWriteCanary {
+  if (!isPassingRoleWritePreview(preview)) {
+    throw new Error('Role-write canary can only be armed from a passing zero-write preview.')
+  }
+  const armedAt = new Date()
+  const armed: ArmedRoleWriteCanary = {
+    correlationId: preview.correlationId,
+    actorFingerprint: preview.actorFingerprint!,
+    matchedSelectorKind: 'uid',
+    armedAt: armedAt.toISOString(),
+    expiresAt: new Date(armedAt.getTime() + ROLE_WRITE_CANARY_ARM_TTL_MS).toISOString(),
+  }
+  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, armed)) {
+    throw new Error('Role-write canary could not be armed in this browser session.')
+  }
+  return armed
+}
+
+export function getArmedRoleWriteCanary(): ArmedRoleWriteCanary | null {
+  const armed = safeSessionGet<ArmedRoleWriteCanary>(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+  const expiresAt = Date.parse(armed?.expiresAt ?? '')
+  if (!armed || !isSafeCorrelationId(armed.correlationId) || !/^[a-f0-9]{16}$/.test(armed.actorFingerprint)
+    || armed.matchedSelectorKind !== 'uid' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+    return null
+  }
+  return armed
+}
+
+export function clearArmedRoleWriteCanary(): void {
+  safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+}
+
+export function getLastRoleWriteRequestEvidence(): RoleWriteRequestEvidence | null {
+  return safeSessionGet<RoleWriteRequestEvidence>(ROLE_WRITE_EVIDENCE_STORAGE_KEY)
 }
 
 export function getPluginUsers(params?: Record<string, unknown>): Promise<{ data: any }> {
@@ -357,19 +423,46 @@ function postPluginUserWrite(
   payload: unknown,
   config?: AxiosRequestConfig
 ): Promise<{ data: any }> {
+  const armedCanary = path === '/change-role' ? getArmedRoleWriteCanary() : null
   const requestConfig = path === '/change-role'
-    ? withRoleWriteCorrelation(config)
+    ? withRoleWriteCorrelation(config, armedCanary)
     : config
 
-  return identityPluginUserApi.post(path, payload, requestConfig).catch((err: AxiosError) => {
+  return identityPluginUserApi.post(path, payload, requestConfig).then((response) => {
+    if (path === '/change-role') {
+      recordRoleWriteEvidence(response, { armedCanary, fallbackUsed: false, identityStatus: response.status })
+      clearArmedRoleWriteCanary()
+    }
+    return response
+  }).catch((err: AxiosError) => {
+    if (path === '/change-role' && armedCanary) {
+      recordRoleWriteEvidence(err.response, {
+        armedCanary,
+        fallbackUsed: false,
+        identityStatus: err.response?.status ?? null,
+        failureCode: safeResponseCode(err),
+      })
+      clearArmedRoleWriteCanary()
+      return Promise.reject(err)
+    }
     if (shouldFallbackToLegacyPluginUserWrite(err)) {
-      return userApi.post(path, payload, requestConfig)
+      return userApi.post(path, payload, requestConfig).then((response) => {
+        if (path === '/change-role') {
+          recordRoleWriteEvidence(response, {
+            armedCanary: null,
+            fallbackUsed: true,
+            identityStatus: err.response?.status ?? null,
+            failureCode: safeResponseCode(err),
+          })
+        }
+        return response
+      })
     }
     return Promise.reject(err)
   })
 }
 
-function withRoleWriteCorrelation(config?: AxiosRequestConfig): AxiosRequestConfig {
+function withRoleWriteCorrelation(config?: AxiosRequestConfig, armedCanary?: ArmedRoleWriteCanary | null): AxiosRequestConfig {
   const headers = { ...(config?.headers as Record<string, unknown> | undefined) }
   const existing = headers['X-Identity-IAM-Role-Write-Correlation']
   return {
@@ -377,10 +470,116 @@ function withRoleWriteCorrelation(config?: AxiosRequestConfig): AxiosRequestConf
     headers: {
       ...headers,
       'X-Identity-IAM-Role-Write-Correlation':
-        typeof existing === 'string' && existing.length > 0
+        armedCanary?.correlationId ?? (typeof existing === 'string' && existing.length > 0
           ? existing
-          : createRoleWriteCorrelationId(),
+          : createRoleWriteCorrelationId()),
+      ...(armedCanary ? { 'X-Identity-IAM-Role-Write-Require-Dual-Write': '1' } : {}),
     },
+  }
+}
+
+function recordRoleWriteEvidence(
+  response: AxiosResponse | undefined,
+  context: {
+    armedCanary: ArmedRoleWriteCanary | null
+    fallbackUsed: boolean
+    identityStatus: number | null
+    failureCode?: string | null
+  }
+): void {
+  const correlationId = responseHeader(response, 'x-identity-iam-role-write-correlation')
+  const route = responseHeader(response, 'x-identity-iam-role-write-route')
+  const mode = responseHeader(response, 'x-identity-iam-role-write')
+  const decision = responseHeader(response, 'x-identity-iam-role-write-decision')
+  const entry = responseHeader(response, 'x-identity-iam-role-write-entry')
+  const actorFingerprint = responseHeader(response, 'x-identity-iam-role-write-actor')
+  const matchedSelectorKind = responseHeader(response, 'x-identity-iam-role-write-selector-kind')
+  const upstreamHost = responseHeader(response, 'x-xrugc-upstream-host')
+  const armed = context.armedCanary
+  const evidence: RoleWriteRequestEvidence = {
+    recordedAt: new Date().toISOString(),
+    correlationId,
+    route,
+    mode,
+    decision,
+    entry,
+    actorFingerprint,
+    matchedSelectorKind,
+    upstreamHost,
+    fallbackUsed: context.fallbackUsed,
+    identityStatus: context.identityStatus,
+    failureCode: context.failureCode ?? null,
+    guarded: Boolean(armed),
+    evidenceComplete: Boolean(
+      armed
+      && !context.fallbackUsed
+      && context.identityStatus !== null
+      && context.identityStatus >= 200
+      && context.identityStatus < 300
+      && mode === 'dual-write'
+      && decision === 'canary_actor_selected'
+      && entry === 'plugin-user-change-role'
+      && route === 'change-role'
+      && correlationId === armed.correlationId
+      && actorFingerprint === armed.actorFingerprint
+      && matchedSelectorKind === 'uid'
+      && upstreamHost
+    ),
+  }
+  safeSessionSet(ROLE_WRITE_EVIDENCE_STORAGE_KEY, evidence)
+}
+
+function responseHeader(response: AxiosResponse | undefined, name: string): string | null {
+  const value = response?.headers?.[name]
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function safeResponseCode(error: AxiosError): string | null {
+  const code = (error.response?.data as any)?.code
+  return typeof code === 'string' || typeof code === 'number' ? String(code).slice(0, 80) : null
+}
+
+function isPassingRoleWritePreview(preview: RoleWriteDecisionPreview): boolean {
+  return preview.writePerformed === false
+    && preview.sourceOfTruth === 'legacy'
+    && preview.roleWriteMode === 'dual-write'
+    && preview.rolloutMode === 'canary'
+    && preview.selected === true
+    && preview.reason === 'canary_actor_selected'
+    && preview.route === 'change-role'
+    && preview.matchedSelectorKind === 'uid'
+    && isSafeCorrelationId(preview.correlationId)
+    && typeof preview.actorFingerprint === 'string'
+    && /^[a-f0-9]{16}$/.test(preview.actorFingerprint)
+}
+
+function isSafeCorrelationId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._:-]{8,128}$/.test(value)
+}
+
+function safeSessionSet(key: string, value: unknown): boolean {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value))
+    return sessionStorage.getItem(key) !== null
+  } catch {
+    return false
+  }
+}
+
+function safeSessionGet<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? JSON.parse(raw) as T : null
+  } catch {
+    return null
+  }
+}
+
+function safeSessionRemove(key: string): void {
+  try {
+    sessionStorage.removeItem(key)
+  } catch {
+    // Ignore storage policy failures.
   }
 }
 
