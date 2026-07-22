@@ -36,6 +36,7 @@ const mainApi = axios.create({
 })
 
 const ROLE_WRITE_CANARY_ARM_STORAGE_KEY = 'user-mgmt-role-write-canary-arm-v1'
+const ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY = 'user-mgmt-role-write-canary-arm-handoff-v1'
 const ROLE_WRITE_EVIDENCE_STORAGE_KEY = 'user-mgmt-role-write-evidence-v1'
 const ROLE_WRITE_CANARY_ARM_TTL_MS = 5 * 60 * 1000
 
@@ -340,22 +341,37 @@ export function armNextRoleWriteCanary(preview: RoleWriteDecisionPreview): Armed
   if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, armed)) {
     throw new Error('Role-write canary could not be armed in this browser session.')
   }
+  // The host can recreate the plugin iframe while the operator moves from diagnostics
+  // to the users page. This is only a short-lived, non-secret handoff copy.
+  safeLocalSet(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY, armed)
   return armed
 }
 
 export function getArmedRoleWriteCanary(): ArmedRoleWriteCanary | null {
-  const armed = safeSessionGet<ArmedRoleWriteCanary>(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
-  const expiresAt = Date.parse(armed?.expiresAt ?? '')
-  if (!armed || !isSafeCorrelationId(armed.correlationId) || !/^[a-f0-9]{16}$/.test(armed.actorFingerprint)
-    || armed.matchedSelectorKind !== 'uid' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+  const sessionArm = safeSessionGet<ArmedRoleWriteCanary>(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+  if (isValidRoleWriteCanaryArm(sessionArm)) {
+    return sessionArm
+  }
+
+  safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+  const handoffArm = safeLocalGet<ArmedRoleWriteCanary>(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
+  if (!isValidRoleWriteCanaryArm(handoffArm)) {
+    safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
     return null
   }
-  return armed
+
+  // Claim the handoff in the newly-created iframe. Requiring session storage here
+  // preserves the original one-session guard even when local storage is available.
+  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, handoffArm)) {
+    return null
+  }
+  safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
+  return handoffArm
 }
 
 export function clearArmedRoleWriteCanary(): void {
   safeSessionRemove(ROLE_WRITE_CANARY_ARM_STORAGE_KEY)
+  safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
 }
 
 export function getLastRoleWriteRequestEvidence(): RoleWriteRequestEvidence | null {
@@ -562,6 +578,18 @@ function isSafeCorrelationId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._:-]{8,128}$/.test(value)
 }
 
+function isValidRoleWriteCanaryArm(armed: ArmedRoleWriteCanary | null): armed is ArmedRoleWriteCanary {
+  const expiresAt = Date.parse(armed?.expiresAt ?? '')
+  return Boolean(
+    armed
+    && isSafeCorrelationId(armed.correlationId)
+    && /^[a-f0-9]{16}$/.test(armed.actorFingerprint)
+    && armed.matchedSelectorKind === 'uid'
+    && Number.isFinite(expiresAt)
+    && expiresAt > Date.now()
+  )
+}
+
 function safeSessionSet(key: string, value: unknown): boolean {
   try {
     sessionStorage.setItem(key, JSON.stringify(value))
@@ -583,6 +611,32 @@ function safeSessionGet<T>(key: string): T | null {
 function safeSessionRemove(key: string): void {
   try {
     sessionStorage.removeItem(key)
+  } catch {
+    // Ignore storage policy failures.
+  }
+}
+
+function safeLocalSet(key: string, value: unknown): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+    return localStorage.getItem(key) !== null
+  } catch {
+    return false
+  }
+}
+
+function safeLocalGet<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) as T : null
+  } catch {
+    return null
+  }
+}
+
+function safeLocalRemove(key: string): void {
+  try {
+    localStorage.removeItem(key)
   } catch {
     // Ignore storage policy failures.
   }

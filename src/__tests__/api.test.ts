@@ -372,6 +372,7 @@ describe('Preservation', () => {
       'X-Identity-IAM-Role-Write-Require-Dual-Write': '1',
     })
     expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
     expect(getLastRoleWriteRequestEvidence()).toMatchObject({
       correlationId,
       actorFingerprint,
@@ -382,6 +383,36 @@ describe('Preservation', () => {
       guarded: true,
       evidenceComplete: true,
     })
+  })
+
+  it('claims a passing guarded arm once after the host recreates the plugin iframe', async () => {
+    const {
+      armNextRoleWriteCanary,
+      getArmedRoleWriteCanary,
+    } = await import('../api/index')
+    const correlationId = 'phase4-iframe-handoff-correlation'
+    const actorFingerprint = '0123456789abcdef'
+    armNextRoleWriteCanary({
+      writePerformed: false,
+      sourceOfTruth: 'legacy',
+      roleWriteMode: 'dual-write',
+      rolloutMode: 'canary',
+      selected: true,
+      reason: 'canary_actor_selected',
+      dualWriteExecutable: true,
+      missingCapabilities: [],
+      correlationId,
+      route: 'change-role',
+      actorFingerprint,
+      matchedSelectorKind: 'uid',
+    })
+
+    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).not.toBeNull()
+    sessionStorage.clear()
+
+    expect(getArmedRoleWriteCanary()).toMatchObject({ correlationId, actorFingerprint })
+    expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).not.toBeNull()
+    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
   })
 
   it('never falls back to the legacy route when a guarded role write is rejected', async () => {
@@ -422,6 +453,7 @@ describe('Preservation', () => {
 
     expect(legacyPostSpy).not.toHaveBeenCalled()
     expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
     expect(getLastRoleWriteRequestEvidence()).toMatchObject({
       fallbackUsed: false,
       identityStatus: 409,
@@ -481,5 +513,19 @@ describe('Preservation', () => {
 
     expect(getArmedRoleWriteCanary()).toBeNull()
     expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).toBeNull()
+  })
+
+  it('discards an expired iframe handoff instead of restoring a guarded write', async () => {
+    const { getArmedRoleWriteCanary } = await import('../api/index')
+    localStorage.setItem('user-mgmt-role-write-canary-arm-handoff-v1', JSON.stringify({
+      correlationId: 'phase4-expired-iframe-handoff',
+      actorFingerprint: '0123456789abcdef',
+      matchedSelectorKind: 'uid',
+      armedAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-01T00:05:00.000Z',
+    }))
+
+    expect(getArmedRoleWriteCanary()).toBeNull()
+    expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
   })
 })
