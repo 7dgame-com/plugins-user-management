@@ -342,6 +342,8 @@ describe('Preservation', () => {
       rolloutMode: 'canary',
       selected: true,
       reason: 'canary_actor_selected',
+      dualWriteExecutable: true,
+      missingCapabilities: [],
       correlationId,
       route: 'change-role',
       actorFingerprint,
@@ -399,6 +401,8 @@ describe('Preservation', () => {
       rolloutMode: 'canary',
       selected: true,
       reason: 'canary_actor_selected',
+      dualWriteExecutable: true,
+      missingCapabilities: [],
       correlationId,
       route: 'change-role',
       actorFingerprint: 'fedcba9876543210',
@@ -425,6 +429,30 @@ describe('Preservation', () => {
       guarded: true,
       evidenceComplete: false,
     })
+  })
+
+  it('does not arm a guarded role write when preview is selected but gate is incomplete', async () => {
+    const {
+      armNextRoleWriteCanary,
+      getArmedRoleWriteCanary,
+    } = await import('../api/index')
+
+    expect(() => armNextRoleWriteCanary({
+      writePerformed: false,
+      sourceOfTruth: 'legacy',
+      roleWriteMode: 'dual-write',
+      rolloutMode: 'canary',
+      selected: true,
+      reason: 'canary_actor_selected',
+      dualWriteExecutable: false,
+      missingCapabilities: ['candidate-policy-checksum'],
+      correlationId: 'phase4-selected-but-not-executable',
+      route: 'change-role',
+      actorFingerprint: '0123456789abcdef',
+      matchedSelectorKind: 'uid',
+    })).toThrow('passing zero-write preview')
+
+    expect(getArmedRoleWriteCanary()).toBeNull()
   })
 
   it('discards an expired role-write canary arm before the next request', async () => {

@@ -284,6 +284,8 @@ export interface RoleWriteDecisionPreview {
   rolloutMode: string
   selected: boolean
   reason: string
+  dualWriteExecutable?: boolean
+  missingCapabilities?: string[]
   correlationId: string
   route: 'change-role'
   actorFingerprint: string | null
@@ -546,6 +548,9 @@ function isPassingRoleWritePreview(preview: RoleWriteDecisionPreview): boolean {
     && preview.rolloutMode === 'canary'
     && preview.selected === true
     && preview.reason === 'canary_actor_selected'
+    && preview.dualWriteExecutable === true
+    && Array.isArray(preview.missingCapabilities)
+    && preview.missingCapabilities.length === 0
     && preview.route === 'change-role'
     && preview.matchedSelectorKind === 'uid'
     && isSafeCorrelationId(preview.correlationId)

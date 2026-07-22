@@ -437,6 +437,9 @@ async function runRoleWritePreview() {
       && preview.rolloutMode === 'canary'
       && preview.selected === true
       && preview.reason === 'canary_actor_selected'
+      && preview.dualWriteExecutable === true
+      && Array.isArray(preview.missingCapabilities)
+      && preview.missingCapabilities.length === 0
       && preview.matchedSelectorKind === 'uid'
       && typeof preview.actorFingerprint === 'string'
       && /^[a-f0-9]{16}$/.test(preview.actorFingerprint)
