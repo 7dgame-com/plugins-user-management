@@ -381,6 +381,7 @@ describe('Preservation', () => {
       fallbackUsed: false,
       identityStatus: 200,
       guarded: true,
+      armHandoffClaimed: false,
       evidenceComplete: true,
     })
   })
@@ -410,9 +411,57 @@ describe('Preservation', () => {
     expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).not.toBeNull()
     sessionStorage.clear()
 
-    expect(getArmedRoleWriteCanary()).toMatchObject({ correlationId, actorFingerprint })
+    expect(getArmedRoleWriteCanary()).toMatchObject({ correlationId, actorFingerprint, handoffClaimed: true })
     expect(sessionStorage.getItem('user-mgmt-role-write-canary-arm-v1')).not.toBeNull()
     expect(localStorage.getItem('user-mgmt-role-write-canary-arm-handoff-v1')).toBeNull()
+  })
+
+  it('records that a guarded write consumed an iframe handoff arm', async () => {
+    const {
+      armNextRoleWriteCanary,
+      changePluginUserRole,
+      getLastRoleWriteRequestEvidence,
+      identityPluginUserApi,
+    } = await import('../api/index')
+    const correlationId = 'phase4-iframe-handoff-evidence'
+    const actorFingerprint = '0123456789abcdef'
+    armNextRoleWriteCanary({
+      writePerformed: false,
+      sourceOfTruth: 'legacy',
+      roleWriteMode: 'dual-write',
+      rolloutMode: 'canary',
+      selected: true,
+      reason: 'canary_actor_selected',
+      dualWriteExecutable: true,
+      missingCapabilities: [],
+      correlationId,
+      route: 'change-role',
+      actorFingerprint,
+      matchedSelectorKind: 'uid',
+    })
+    sessionStorage.clear()
+    vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
+      status: 200,
+      data: { code: 0 },
+      headers: {
+        'x-identity-iam-role-write-correlation': correlationId,
+        'x-identity-iam-role-write-route': 'change-role',
+        'x-identity-iam-role-write': 'dual-write',
+        'x-identity-iam-role-write-decision': 'canary_actor_selected',
+        'x-identity-iam-role-write-entry': 'plugin-user-change-role',
+        'x-identity-iam-role-write-actor': actorFingerprint,
+        'x-identity-iam-role-write-selector-kind': 'uid',
+        'x-xrugc-upstream-host': 'identity.d.xrteeth.com',
+      },
+    } as any)
+
+    await changePluginUserRole(25, 'manager')
+
+    expect(getLastRoleWriteRequestEvidence()).toMatchObject({
+      guarded: true,
+      armHandoffClaimed: true,
+      evidenceComplete: true,
+    })
   })
 
   it('never falls back to the legacy route when a guarded role write is rejected', async () => {
@@ -459,6 +508,7 @@ describe('Preservation', () => {
       identityStatus: 409,
       failureCode: 'IAM_ROLE_WRITE_DUAL_WRITE_REQUIRED',
       guarded: true,
+      armHandoffClaimed: false,
       evidenceComplete: false,
     })
   })

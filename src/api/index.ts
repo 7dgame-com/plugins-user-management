@@ -299,6 +299,7 @@ export interface ArmedRoleWriteCanary {
   matchedSelectorKind: 'uid'
   armedAt: string
   expiresAt: string
+  handoffClaimed: boolean
 }
 
 export interface RoleWriteRequestEvidence {
@@ -315,6 +316,7 @@ export interface RoleWriteRequestEvidence {
   identityStatus: number | null
   failureCode: string | null
   guarded: boolean
+  armHandoffClaimed: boolean
   evidenceComplete: boolean
 }
 
@@ -337,6 +339,7 @@ export function armNextRoleWriteCanary(preview: RoleWriteDecisionPreview): Armed
     matchedSelectorKind: 'uid',
     armedAt: armedAt.toISOString(),
     expiresAt: new Date(armedAt.getTime() + ROLE_WRITE_CANARY_ARM_TTL_MS).toISOString(),
+    handoffClaimed: false,
   }
   if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, armed)) {
     throw new Error('Role-write canary could not be armed in this browser session.')
@@ -362,11 +365,12 @@ export function getArmedRoleWriteCanary(): ArmedRoleWriteCanary | null {
 
   // Claim the handoff in the newly-created iframe. Requiring session storage here
   // preserves the original one-session guard even when local storage is available.
-  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, handoffArm)) {
+  const claimedHandoffArm: ArmedRoleWriteCanary = { ...handoffArm, handoffClaimed: true }
+  if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, claimedHandoffArm)) {
     return null
   }
   safeLocalRemove(ROLE_WRITE_CANARY_ARM_HANDOFF_STORAGE_KEY)
-  return handoffArm
+  return claimedHandoffArm
 }
 
 export function clearArmedRoleWriteCanary(): void {
@@ -528,6 +532,7 @@ function recordRoleWriteEvidence(
     identityStatus: context.identityStatus,
     failureCode: context.failureCode ?? null,
     guarded: Boolean(armed),
+    armHandoffClaimed: Boolean(armed?.handoffClaimed),
     evidenceComplete: Boolean(
       armed
       && !context.fallbackUsed
@@ -585,6 +590,7 @@ function isValidRoleWriteCanaryArm(armed: ArmedRoleWriteCanary | null): armed is
     && isSafeCorrelationId(armed.correlationId)
     && /^[a-f0-9]{16}$/.test(armed.actorFingerprint)
     && armed.matchedSelectorKind === 'uid'
+    && typeof armed.handoffClaimed === 'boolean'
     && Number.isFinite(expiresAt)
     && expiresAt > Date.now()
   )
