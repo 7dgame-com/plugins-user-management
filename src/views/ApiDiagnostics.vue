@@ -218,6 +218,14 @@
         show-icon
         style="margin-top: 12px"
       />
+      <el-button
+        v-if="roleWriteCanaryArmed"
+        type="warning"
+        style="margin-top: 12px"
+        @click="continueToRoleWriteTarget"
+      >
+        进入用户列表并保持受控接力
+      </el-button>
       <div class="role-write-evidence">
         <el-button @click="refreshRoleWriteEvidence">刷新最近写入证据</el-button>
         <div v-if="lastRoleWriteEvidence" class="custom-result">
@@ -294,6 +302,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import api, {
   armNextRoleWriteCanary,
   clearArmedRoleWriteCanary,
@@ -413,10 +422,21 @@ const roleWritePreviewPassed = ref(false)
 const roleWritePreviewError = ref('')
 const roleWriteCanaryArmed = ref(Boolean(getArmedRoleWriteCanary()))
 const lastRoleWriteEvidence = ref<RoleWriteRequestEvidence | null>(getLastRoleWriteRequestEvidence())
+const router = useRouter()
 
 function refreshRoleWriteEvidence() {
   lastRoleWriteEvidence.value = getLastRoleWriteRequestEvidence()
   roleWriteCanaryArmed.value = Boolean(getArmedRoleWriteCanary())
+}
+
+function continueToRoleWriteTarget() {
+  if (!getArmedRoleWriteCanary()) {
+    roleWriteCanaryArmed.value = false
+    roleWritePreviewError.value = '角色写入预检已失效，请重新执行零写入预检。'
+    return
+  }
+
+  router.push('/users')
 }
 
 async function runRoleWritePreview() {
