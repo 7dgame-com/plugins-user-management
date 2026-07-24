@@ -9,13 +9,19 @@ vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn() } }))
 vi.mock('../utils/token', () => ({ isInIframe: vi.fn().mockReturnValue(true) }))
 
 import router, { permissionGuard } from '../router/index'
+import { isInIframe } from '../utils/token'
+import { requestPendingRoleWriteHostHandoff } from '../utils/hostEvents'
 
 const to = (meta: Record<string, unknown>) => ({ meta })
 const from = (name?: string) => ({ name: name ?? null })
 
-describe('Bug Condition Exploration', () => {
-  beforeEach(() => { mockCan.mockReturnValue(false) })
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.mocked(isInIframe).mockReturnValue(true)
+  mockCan.mockReturnValue(false)
+})
 
+describe('Bug Condition Exploration', () => {
   it('Bug 4: guard returns false when permission is denied', () => {
     const result = permissionGuard(
       to({ requiresPermission: 'list-users' }),
@@ -74,5 +80,46 @@ describe('Preservation', () => {
       }),
       '*'
     )
+  })
+
+  it('requests a pending host handoff after entering the user list in the same iframe', async () => {
+    mockCan.mockReturnValue(true)
+    const postMessageSpy = vi
+      .spyOn(window.parent, 'postMessage')
+      .mockImplementation(() => undefined)
+
+    await router.push('/users')
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ROLE_WRITE_CANARY_HANDOFF_REQUEST',
+        payload: { targetPath: '/users' },
+      }),
+      '*'
+    )
+  })
+
+  it('does not request a role-write handoff for another plugin route', async () => {
+    mockCan.mockReturnValue(true)
+    const postMessageSpy = vi
+      .spyOn(window.parent, 'postMessage')
+      .mockImplementation(() => undefined)
+
+    await router.push('/organizations')
+
+    expect(postMessageSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'ROLE_WRITE_CANARY_HANDOFF_REQUEST' }),
+      '*'
+    )
+  })
+
+  it('does not request a role-write handoff outside the authenticated plugin host', () => {
+    vi.mocked(isInIframe).mockReturnValue(false)
+    const postMessageSpy = vi
+      .spyOn(window.parent, 'postMessage')
+      .mockImplementation(() => undefined)
+
+    expect(requestPendingRoleWriteHostHandoff('/users')).toBe(false)
+    expect(postMessageSpy).not.toHaveBeenCalled()
   })
 })

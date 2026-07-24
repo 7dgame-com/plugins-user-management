@@ -26,6 +26,10 @@
           <code>{{ envInfo.mainApiBase }}</code>
         </div>
         <div class="info-item">
+          <span class="label">identityPluginUserApi baseURL</span>
+          <code>{{ envInfo.identityPluginUserApiBase }}</code>
+        </div>
+        <div class="info-item">
           <span class="label">实际请求 userApi 完整地址</span>
           <code>{{ envInfo.origin }}{{ envInfo.userApiBase }}</code>
         </div>
@@ -98,6 +102,9 @@
               </div>
               <div v-if="row.upstreamAddr" class="upstream-addr">
                 📡 Nginx 实际连接的后端: <code>{{ row.upstreamAddr }}</code>
+              </div>
+              <div v-if="row.upstreamHost" class="upstream-addr">
+                Nginx 选中的上游 Host: <code>{{ row.upstreamHost }}</code>
               </div>
               <div v-if="row.finalUrl && row.finalUrl !== row.url" class="redirect-warn">
                 ⚠️ 重定向到: <code>{{ row.finalUrl }}</code>
@@ -177,6 +184,62 @@
       </el-table>
     </div>
 
+    <!-- Phase 4 role-write zero-write preview -->
+    <div class="section">
+      <h3>角色写入零写入预检</h3>
+      <p class="hint">
+        使用当前 iframe 登录 Token 调用 Identity decision preview；该请求只返回 rollout 决策，不执行角色写入。
+      </p>
+      <el-button type="primary" :loading="roleWritePreviewLoading" @click="runRoleWritePreview">
+        执行零写入预检
+      </el-button>
+      <el-alert
+        v-if="roleWritePreviewError"
+        :title="roleWritePreviewError"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-top: 12px"
+      />
+      <div v-if="roleWritePreviewResult" class="custom-result">
+        <div>
+          门禁：
+          <el-tag :type="roleWritePreviewPassed ? 'success' : 'danger'" size="small">
+            {{ roleWritePreviewPassed ? 'PASS' : 'STOP' }}
+          </el-tag>
+        </div>
+        <pre>{{ JSON.stringify(roleWritePreviewResult, null, 2) }}</pre>
+      </div>
+      <el-alert
+        v-if="roleWriteCanaryArmed"
+        title="下一次角色写入已进入一次性 dual-write 强制门禁；5 分钟后自动失效。"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-top: 12px"
+      />
+      <el-button
+        v-if="roleWriteCanaryArmed"
+        type="warning"
+        style="margin-top: 12px"
+        @click="continueToRoleWriteTarget"
+      >
+        进入用户列表并保持受控接力
+      </el-button>
+      <div class="role-write-evidence">
+        <el-button @click="refreshRoleWriteEvidence">刷新最近写入证据</el-button>
+        <div v-if="lastRoleWriteEvidence" class="custom-result">
+          <div>
+            写入证据：
+            <el-tag :type="lastRoleWriteEvidence.evidenceComplete ? 'success' : 'danger'" size="small">
+              {{ lastRoleWriteEvidence.evidenceComplete ? 'PASS' : 'STOP' }}
+            </el-tag>
+          </div>
+          <pre>{{ JSON.stringify(lastRoleWriteEvidence, null, 2) }}</pre>
+        </div>
+      </div>
+    </div>
+
     <!-- 原始 fetch 测试 -->
     <div class="section">
       <h3>原始 Fetch 测试（绕过 Axios）</h3>
@@ -239,7 +302,18 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import api, { identityPluginUserApi, mainApi } from '../api'
+import { useRouter } from 'vue-router'
+import api, {
+  armNextRoleWriteCanary,
+  clearArmedRoleWriteCanary,
+  getArmedRoleWriteCanary,
+  getLastRoleWriteRequestEvidence,
+  getRoleWriteDecisionPreview,
+  identityPluginUserApi,
+  mainApi,
+  type RoleWriteDecisionPreview,
+  type RoleWriteRequestEvidence,
+} from '../api'
 import { getToken, isInIframe } from '../utils/token'
 
 // ---- 环境信息 ----
@@ -341,6 +415,67 @@ async function runAll() {
   runningAll.value = false
 }
 
+// ---- Phase 4 role-write zero-write preview ----
+const roleWritePreviewLoading = ref(false)
+const roleWritePreviewResult = ref<RoleWriteDecisionPreview | null>(null)
+const roleWritePreviewPassed = ref(false)
+const roleWritePreviewError = ref('')
+const roleWriteCanaryArmed = ref(Boolean(getArmedRoleWriteCanary()))
+const lastRoleWriteEvidence = ref<RoleWriteRequestEvidence | null>(getLastRoleWriteRequestEvidence())
+const router = useRouter()
+
+function refreshRoleWriteEvidence() {
+  lastRoleWriteEvidence.value = getLastRoleWriteRequestEvidence()
+  roleWriteCanaryArmed.value = Boolean(getArmedRoleWriteCanary())
+}
+
+function continueToRoleWriteTarget() {
+  if (!getArmedRoleWriteCanary()) {
+    roleWriteCanaryArmed.value = false
+    roleWritePreviewError.value = '角色写入预检已失效，请重新执行零写入预检。'
+    return
+  }
+
+  router.push('/users')
+}
+
+async function runRoleWritePreview() {
+  roleWritePreviewLoading.value = true
+  roleWritePreviewResult.value = null
+  roleWritePreviewPassed.value = false
+  roleWritePreviewError.value = ''
+  clearArmedRoleWriteCanary()
+  roleWriteCanaryArmed.value = false
+
+  try {
+    const response = await getRoleWriteDecisionPreview()
+    const preview = response.data.data
+    roleWritePreviewResult.value = preview
+    roleWritePreviewPassed.value = preview.writePerformed === false
+      && preview.sourceOfTruth === 'legacy'
+      && preview.roleWriteMode === 'dual-write'
+      && preview.rolloutMode === 'canary'
+      && preview.selected === true
+      && preview.reason === 'canary_actor_selected'
+      && preview.dualWriteExecutable === true
+      && Array.isArray(preview.missingCapabilities)
+      && preview.missingCapabilities.length === 0
+      && preview.matchedSelectorKind === 'uid'
+      && typeof preview.actorFingerprint === 'string'
+      && /^[a-f0-9]{16}$/.test(preview.actorFingerprint)
+    if (roleWritePreviewPassed.value) {
+      await armNextRoleWriteCanary(preview)
+      roleWriteCanaryArmed.value = true
+    }
+  } catch (err: any) {
+    const status = err.response?.status
+    const message = err.response?.data?.message || err.message || String(err)
+    roleWritePreviewError.value = status ? `HTTP ${status}: ${message}` : message
+  } finally {
+    roleWritePreviewLoading.value = false
+  }
+}
+
 // ---- 原始 Fetch 测试 ----
 interface RawTestItem {
   name: string
@@ -429,6 +564,7 @@ interface ProxyTestItem {
   responseBody: string
   finalUrl: string
   upstreamAddr: string
+  upstreamHost: string
   latency: number | null
   verdict: 'ok' | 'warn' | 'fail'
   verdictIcon: string
@@ -439,7 +575,7 @@ function makeProxyTest(name: string, url: string, expectedBackend: string): Prox
   return {
     name, url, expectedBackend,
     status: 'pending', httpStatus: '', responseHeaders: '', responseBody: '',
-    finalUrl: '', upstreamAddr: '', latency: null, verdict: 'ok', verdictIcon: '', verdictText: '',
+    finalUrl: '', upstreamAddr: '', upstreamHost: '', latency: null, verdict: 'ok', verdictIcon: '', verdictText: '',
   }
 }
 
@@ -455,6 +591,8 @@ async function runProxyTest(item: ProxyTestItem) {
   item.responseBody = ''
   item.responseHeaders = ''
   item.finalUrl = ''
+  item.upstreamAddr = ''
+  item.upstreamHost = ''
   item.latency = null
   item.verdict = 'ok'
   item.verdictIcon = ''
@@ -473,13 +611,21 @@ async function runProxyTest(item: ProxyTestItem) {
     item.finalUrl = resp.url !== expectedAbsolute ? resp.url : ''
 
     // 收集关键响应头
-    const headerNames = ['content-type', 'server', 'x-powered-by', 'x-request-id']
+    const headerNames = [
+      'content-type',
+      'server',
+      'x-powered-by',
+      'x-request-id',
+      'x-xrugc-upstream-host',
+      'x-upstream-addr',
+    ]
     const headerParts: string[] = []
     headerNames.forEach(h => {
       const v = resp.headers.get(h)
       if (v) headerParts.push(`${h}: ${v}`)
     })
     item.upstreamAddr = resp.headers.get('x-upstream-addr') || ''
+    item.upstreamHost = resp.headers.get('x-xrugc-upstream-host') || ''
     item.responseHeaders = headerParts.join(' | ')
 
     const text = await resp.text()
@@ -545,6 +691,7 @@ onMounted(async () => {
       }
       const upstreams: string[] = []
       const apiUrls: string[] = []
+      const authUrls: string[] = []
       let i = 1
       while (data[`APP_API_${i}_URL`]) {
         apiUrls.push(data[`APP_API_${i}_URL`])
@@ -556,14 +703,22 @@ onMounted(async () => {
         apiUrls.push(data.API_UPSTREAM)
         upstreams.push(`API_UPSTREAM=${data.API_UPSTREAM}`)
       }
+      i = 1
+      while (data[`APP_AUTH_${i}_URL`]) {
+        authUrls.push(data[`APP_AUTH_${i}_URL`])
+        upstreams.push(`APP_AUTH_${i}_URL=${data[`APP_AUTH_${i}_URL`]}`)
+        i++
+      }
       envInfo.upstreams = upstreams.length ? upstreams.join(' | ') : '未设置'
       envInfo.hostname = data.hostname || ''
       envInfo.serverBuildTime = data.buildTime || ''
 
       proxyTests.value.forEach(t => {
-        if (!apiUrls.length || !t.url.startsWith('/api/')) return
-        const targetUrls = apiUrls
-        const matcher = /^\/api/
+        const isAuth = t.url.startsWith('/api-auth/')
+        const isApi = t.url.startsWith('/api/')
+        const targetUrls = isAuth ? authUrls : isApi ? apiUrls : []
+        if (!targetUrls.length) return
+        const matcher = isAuth ? /^\/api-auth/ : /^\/api/
         const backendPath = t.url.replace(matcher, '')
         t.expectedBackend = targetUrls.length === 1
           ? targetUrls[0].replace(/\/$/, '') + backendPath

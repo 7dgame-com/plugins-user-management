@@ -2,7 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { isInIframe } from '../utils/token'
 import { usePermissions } from '../composables/usePermissions'
-import { notifyHostPluginUrlChanged } from '../utils/hostEvents'
+import {
+  notifyHostPluginUrlChanged,
+  requestPendingRoleWriteHostHandoff,
+} from '../utils/hostEvents'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -103,6 +106,7 @@ router.beforeEach(permissionGuard)
 
 router.afterEach((to) => {
   notifyHostPluginUrlChanged(to.fullPath)
+  requestPendingRoleWriteHostHandoff(to.path)
 })
 
 export default router

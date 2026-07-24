@@ -39,6 +39,44 @@ export function removeAllTokens() {
   removeRefreshToken()
 }
 
+export function getTokenActorSubject(token: string | null | undefined): string | null {
+  if (!token) return null
+
+  const encodedPayload = token.split('.')[1]
+  if (!encodedPayload) return null
+
+  try {
+    const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
+    const payload = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>
+    const subject = payload.uid ?? payload.sub
+    const numericSubject = typeof subject === 'number'
+      ? subject
+      : typeof subject === 'string' && /^\d+$/.test(subject.trim())
+        ? Number(subject)
+        : Number.NaN
+
+    return Number.isSafeInteger(numericSubject) && numericSubject > 0
+      ? `uid:${numericSubject}`
+      : null
+  } catch {
+    return null
+  }
+}
+
+export function haveSameTokenActor(
+  currentToken: string | null | undefined,
+  nextToken: string | null | undefined
+): boolean {
+  if (!currentToken || !nextToken) return false
+  if (currentToken === nextToken) return true
+
+  const currentSubject = getTokenActorSubject(currentToken)
+  const nextSubject = getTokenActorSubject(nextToken)
+  return currentSubject !== null && currentSubject === nextSubject
+}
+
 /**
  * 监听主框架的 postMessage，接收 INIT / TOKEN_UPDATE / DESTROY 消息
  *
