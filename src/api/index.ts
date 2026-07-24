@@ -414,6 +414,13 @@ export function handleRoleWriteHostMessage(
     }
     clearTimeout(pending.timeoutId)
     pendingHostRoleWriteArm = null
+    if (!safeSessionSet(ROLE_WRITE_CANARY_ARM_STORAGE_KEY, pending.armed)) {
+      postRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_CANCEL', {
+        correlationId: pending.armed.correlationId,
+      })
+      pending.reject(new Error('Role-write canary could not persist the pending host handoff.'))
+      return false
+    }
     pending.resolve(pending.armed)
     return true
   }
@@ -424,9 +431,15 @@ export function handleRoleWriteHostMessage(
 
   const targetPath = payload.targetPath
   const handoff = payload as unknown as ArmedRoleWriteCanary
+  const pendingArm = getArmedRoleWriteCanary()
   if (
     targetPath !== ROLE_WRITE_CANARY_TARGET_PATH
     || normalizeRoleWritePath(window.location.pathname) !== ROLE_WRITE_CANARY_TARGET_PATH
+    || !pendingArm
+    || pendingArm.handoffClaimed !== false
+    || pendingArm.correlationId !== handoff.correlationId
+    || pendingArm.actorFingerprint !== handoff.actorFingerprint
+    || pendingArm.matchedSelectorKind !== handoff.matchedSelectorKind
     || handoff.handoffClaimed !== false
     || !isValidRoleWriteCanaryArm(handoff)
   ) {
@@ -512,6 +525,11 @@ function postPluginUserWrite(
   config?: AxiosRequestConfig
 ): Promise<{ data: any }> {
   const armedCanary = path === '/change-role' ? getArmedRoleWriteCanary() : null
+  if (path === '/change-role' && armedCanary && armedCanary.handoffClaimed !== true) {
+    // A host ACK alone never permits a role write; the new iframe must claim the handoff.
+    clearArmedRoleWriteCanary()
+    return Promise.reject(new Error('Role-write canary requires the guarded dual-write handoff.'))
+  }
   const requestConfig = path === '/change-role'
     ? withRoleWriteCorrelation(config, armedCanary)
     : config

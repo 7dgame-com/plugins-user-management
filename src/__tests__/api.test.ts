@@ -356,7 +356,11 @@ describe('Preservation', () => {
       actorFingerprint,
     })).toBe(true)
     const armed = await armPromise
-    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+    expect(apiModule.getArmedRoleWriteCanary()).toMatchObject({
+      correlationId,
+      actorFingerprint,
+      handoffClaimed: false,
+    })
 
     window.history.replaceState({}, '', '/users')
     expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', {
@@ -394,7 +398,11 @@ describe('Preservation', () => {
       actorFingerprint,
     })
     const armed = await armPromise
-    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
+    expect(apiModule.getArmedRoleWriteCanary()).toMatchObject({
+      correlationId,
+      actorFingerprint,
+      handoffClaimed: false,
+    })
 
     window.history.replaceState({}, '', '/users')
     expect(apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', {
@@ -409,6 +417,32 @@ describe('Preservation', () => {
       }),
       '*',
     )
+  })
+
+  it('fails closed before a host-acknowledged arm has claimed the iframe handoff', async () => {
+    const apiModule = await import('../api/index')
+    const correlationId = 'phase4-host-ack-without-handoff'
+    const actorFingerprint = '0123456789abcdef'
+    const armPromise = apiModule.armNextRoleWriteCanary(
+      passingRoleWritePreview(correlationId, actorFingerprint),
+    )
+    apiModule.handleRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_ACK', {
+      accepted: true,
+      correlationId,
+      actorFingerprint,
+    })
+    await armPromise
+
+    const identityPostSpy = vi.spyOn(apiModule.identityPluginUserApi, 'post')
+    const legacyPostSpy = vi.spyOn(apiModule.default, 'post')
+
+    await expect(apiModule.changePluginUserRole(25, 'manager')).rejects.toThrow(
+      'guarded dual-write handoff',
+    )
+
+    expect(identityPostSpy).not.toHaveBeenCalled()
+    expect(legacyPostSpy).not.toHaveBeenCalled()
+    expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
   })
 
   it('records complete evidence only after a host handoff was claimed', async () => {
