@@ -46,6 +46,15 @@ describe('user-management auth-session routing semantics', () => {
     expect(entrypoint).toContain('${API_LOCATIONS}${AUTH_LOCATIONS}')
   })
 
+  it('exposes the selected upstream host and address on direct, primary and failover responses', () => {
+    const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
+
+    expect(entrypoint).toContain('add_header X-XRUGC-Upstream-Host ${host} always;')
+    expect(entrypoint).toContain('add_header X-XRUGC-Upstream-Host \\$${PREFIX_NAME}_backend_host always;')
+    expect(entrypoint).toContain('add_header X-XRUGC-Upstream-Host \\$${PREFIX_NAME}_fb_host always;')
+    expect(entrypoint.split('add_header X-Upstream-Addr \\$upstream_addr always;')).toHaveLength(4)
+  })
+
   it('formats debug-env JSON with a conditional upstream comma', () => {
     const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
 

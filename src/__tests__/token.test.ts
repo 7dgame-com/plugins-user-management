@@ -1,6 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as tokenModule from '../utils/token'
-import { getToken, setToken, removeToken, removeAllTokens, listenForParentToken, requestParentTokenRefresh } from '../utils/token'
+import {
+  getToken,
+  setToken,
+  removeToken,
+  removeAllTokens,
+  listenForParentToken,
+  requestParentTokenRefresh,
+  getTokenActorSubject,
+  haveSameTokenActor,
+} from '../utils/token'
+
+function testJwt(payload: Record<string, unknown>): string {
+  const encode = (value: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encode({ alg: 'ES256', typ: 'JWT' })}.${encode(payload)}.test-signature`
+}
 
 describe('Bug Condition Exploration', () => {
   beforeEach(() => { localStorage.clear() })
@@ -53,5 +68,36 @@ describe('Preservation', () => {
     })
     const result = await requestParentTokenRefresh()
     expect(result).toEqual({ accessToken: 'new-token' })
+  })
+
+  it('keeps a guarded role-write handoff across a same-actor token refresh', () => {
+    const currentToken = testJwt({ uid: 3, username: 'dirui', jti: 'before' })
+    const refreshedToken = testJwt({ uid: 3, username: 'dirui', jti: 'after' })
+
+    expect(getTokenActorSubject(currentToken)).toBe('uid:3')
+    expect(haveSameTokenActor(currentToken, refreshedToken)).toBe(true)
+  })
+
+  it('uses a numeric JWT subject when uid is absent', () => {
+    const currentToken = testJwt({ sub: '3', jti: 'before' })
+    const refreshedToken = testJwt({ sub: '3', jti: 'after' })
+
+    expect(getTokenActorSubject(currentToken)).toBe('uid:3')
+    expect(haveSameTokenActor(currentToken, refreshedToken)).toBe(true)
+  })
+
+  it('invalidates a guarded role-write handoff when the actor changes', () => {
+    const currentToken = testJwt({ uid: 3, username: 'dirui' })
+    const nextToken = testJwt({ uid: 613, username: 'iamrolecanary01' })
+
+    expect(haveSameTokenActor(currentToken, nextToken)).toBe(false)
+  })
+
+  it('fails closed for empty or unrecognized token updates', () => {
+    const currentToken = testJwt({ uid: 3, username: 'dirui' })
+
+    expect(haveSameTokenActor(currentToken, '')).toBe(false)
+    expect(haveSameTokenActor(currentToken, 'not-a-jwt')).toBe(false)
+    expect(haveSameTokenActor(testJwt({ sub: 'actor-name' }), currentToken)).toBe(false)
   })
 })

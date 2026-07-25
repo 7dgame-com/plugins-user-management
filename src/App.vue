@@ -36,9 +36,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { isInIframe, getToken, setToken, removeToken } from './utils/token'
+import { isInIframe, getToken, setToken, removeToken, haveSameTokenActor } from './utils/token'
 import { usePluginMessageBridge } from './composables/usePluginMessageBridge'
 import { setThemeFromConfig } from './composables/useTheme'
+import { clearArmedRoleWriteCanary, handleRoleWriteHostMessage } from './api'
 
 declare const __APP_VERSION__: string
 const appVersion = `v${__APP_VERSION__}`
@@ -56,24 +57,40 @@ const isPublicRoute = computed(() => PUBLIC_ROUTES.some((p) => route.path.starts
 // 显示握手模态窗：非公开页面 且 (不在iframe 或 还没有token)
 const showHandshake = computed(() => !isPublicRoute.value && (!inIframe.value || !hasToken.value))
 
-const { isReady } = usePluginMessageBridge({
-  onInit: (payload) => {
-    if (payload.token) {
-      setToken(payload.token)
-      hasToken.value = true
-    }
-    setThemeFromConfig(payload.config)
-  },
-  onTokenUpdate: (newToken) => {
-    if (newToken) {
-      setToken(newToken)
-      hasToken.value = true
-    }
-  },
-  onDestroy: () => {
+function applyHostToken(newToken: string) {
+  if (!haveSameTokenActor(getToken(), newToken)) {
+    clearArmedRoleWriteCanary()
+  }
+
+  if (newToken) {
+    setToken(newToken)
+    hasToken.value = true
+  } else {
     removeToken()
     hasToken.value = false
   }
+}
+
+const { isReady, onMessage } = usePluginMessageBridge({
+  onInit: (payload) => {
+    applyHostToken(payload.token)
+    setThemeFromConfig(payload.config)
+  },
+  onTokenUpdate: (newToken) => {
+    applyHostToken(newToken)
+  },
+  onDestroy: () => {
+    clearArmedRoleWriteCanary()
+    removeToken()
+    hasToken.value = false
+  }
+})
+
+onMessage('ROLE_WRITE_CANARY_ARM_ACK', (payload) => {
+  handleRoleWriteHostMessage('ROLE_WRITE_CANARY_ARM_ACK', (payload as Record<string, unknown>) ?? {})
+})
+onMessage('ROLE_WRITE_CANARY_HANDOFF', (payload) => {
+  handleRoleWriteHostMessage('ROLE_WRITE_CANARY_HANDOFF', (payload as Record<string, unknown>) ?? {})
 })
 
 onMounted(() => {
@@ -203,4 +220,3 @@ onMounted(() => {
   user-select: none;
 }
 </style>
-
