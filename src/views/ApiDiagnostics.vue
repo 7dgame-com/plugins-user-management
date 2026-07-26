@@ -228,6 +228,22 @@
       </el-button>
       <div class="role-write-evidence">
         <el-button @click="refreshRoleWriteEvidence">刷新最近写入证据</el-button>
+        <el-button
+          v-if="roleWriteReplayAvailable"
+          type="warning"
+          :loading="roleWriteReplayLoading"
+          @click="runRoleWriteReplay"
+        >
+          执行一次性幂等重放
+        </el-button>
+        <el-alert
+          v-if="roleWriteReplayError"
+          :title="roleWriteReplayError"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-top: 12px"
+        />
         <div v-if="lastRoleWriteEvidence" class="custom-result">
           <div>
             写入证据：
@@ -308,9 +324,11 @@ import api, {
   clearArmedRoleWriteCanary,
   getArmedRoleWriteCanary,
   getLastRoleWriteRequestEvidence,
+  getPendingRoleWriteReplay,
   getRoleWriteDecisionPreview,
   identityPluginUserApi,
   mainApi,
+  replayLastGuardedRoleWrite,
   type RoleWriteDecisionPreview,
   type RoleWriteRequestEvidence,
 } from '../api'
@@ -422,11 +440,31 @@ const roleWritePreviewPassed = ref(false)
 const roleWritePreviewError = ref('')
 const roleWriteCanaryArmed = ref(Boolean(getArmedRoleWriteCanary()))
 const lastRoleWriteEvidence = ref<RoleWriteRequestEvidence | null>(getLastRoleWriteRequestEvidence())
+const roleWriteReplayAvailable = ref(Boolean(getPendingRoleWriteReplay()))
+const roleWriteReplayLoading = ref(false)
+const roleWriteReplayError = ref('')
 const router = useRouter()
 
 function refreshRoleWriteEvidence() {
   lastRoleWriteEvidence.value = getLastRoleWriteRequestEvidence()
   roleWriteCanaryArmed.value = Boolean(getArmedRoleWriteCanary())
+  roleWriteReplayAvailable.value = Boolean(getPendingRoleWriteReplay())
+}
+
+async function runRoleWriteReplay() {
+  roleWriteReplayLoading.value = true
+  roleWriteReplayError.value = ''
+  try {
+    const result = await replayLastGuardedRoleWrite()
+    lastRoleWriteEvidence.value = result.evidence
+  } catch (err: any) {
+    const status = err.response?.status
+    const message = err.response?.data?.message || err.message || String(err)
+    roleWriteReplayError.value = status ? `HTTP ${status}: ${message}` : message
+  } finally {
+    roleWriteReplayAvailable.value = Boolean(getPendingRoleWriteReplay())
+    roleWriteReplayLoading.value = false
+  }
 }
 
 function continueToRoleWriteTarget() {
