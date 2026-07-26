@@ -37,6 +37,7 @@ const mainApi = axios.create({
 
 const ROLE_WRITE_CANARY_ARM_STORAGE_KEY = 'user-mgmt-role-write-canary-arm-v1'
 const ROLE_WRITE_EVIDENCE_STORAGE_KEY = 'user-mgmt-role-write-evidence-v1'
+const ROLE_WRITE_REPLAY_STORAGE_KEY = 'user-mgmt-role-write-replay-v1'
 const ROLE_WRITE_CANARY_ARM_TTL_MS = 5 * 60 * 1000
 const ROLE_WRITE_CANARY_CLOCK_SKEW_MS = 30 * 1000
 const ROLE_WRITE_CANARY_HOST_ACK_TIMEOUT_MS = 3000
@@ -328,7 +329,19 @@ export interface RoleWriteRequestEvidence {
   failureCode: string | null
   guarded: boolean
   armHandoffClaimed: boolean
+  idempotencyKeyPresent: boolean
+  idempotencyReplay: boolean
   evidenceComplete: boolean
+}
+
+export interface GuardedRoleWriteReplay {
+  correlationId: string
+  actorFingerprint: string
+  targetId: number
+  role: 'user' | 'manager' | 'admin'
+  idempotencyKey: string
+  armedAt: string
+  expiresAt: string
 }
 
 export function getRoleWriteDecisionPreview(correlationId = createRoleWriteCorrelationId()): Promise<{
@@ -461,6 +474,62 @@ export function getLastRoleWriteRequestEvidence(): RoleWriteRequestEvidence | nu
   return safeSessionGet<RoleWriteRequestEvidence>(ROLE_WRITE_EVIDENCE_STORAGE_KEY)
 }
 
+export function getPendingRoleWriteReplay(): GuardedRoleWriteReplay | null {
+  const replay = safeSessionGet<GuardedRoleWriteReplay>(ROLE_WRITE_REPLAY_STORAGE_KEY)
+  if (isValidGuardedRoleWriteReplay(replay)) {
+    return replay
+  }
+
+  safeSessionRemove(ROLE_WRITE_REPLAY_STORAGE_KEY)
+  return null
+}
+
+export async function replayLastGuardedRoleWrite(): Promise<{
+  response: { data: any }
+  evidence: RoleWriteRequestEvidence
+}> {
+  const replay = getPendingRoleWriteReplay()
+  if (!replay) {
+    throw new Error('No valid guarded role-write request is available for idempotency replay.')
+  }
+
+  const previewResponse = await getRoleWriteDecisionPreview(replay.correlationId)
+  const preview = previewResponse.data.data
+  if (!isPassingRoleWritePreview(preview) || preview.actorFingerprint !== replay.actorFingerprint) {
+    safeSessionRemove(ROLE_WRITE_REPLAY_STORAGE_KEY)
+    throw new Error('Role-write idempotency replay no longer matches the approved operator gate.')
+  }
+
+  const armedCanary: ArmedRoleWriteCanary = {
+    correlationId: replay.correlationId,
+    actorFingerprint: replay.actorFingerprint,
+    matchedSelectorKind: 'uid',
+    armedAt: replay.armedAt,
+    expiresAt: replay.expiresAt,
+    handoffClaimed: true,
+  }
+  const response = await identityPluginUserApi.post('/change-role', {
+    id: replay.targetId,
+    role: replay.role,
+  }, {
+    headers: guardedRoleWriteHeaders(armedCanary),
+  })
+  const evidence = recordRoleWriteEvidence(response, {
+    armedCanary,
+    fallbackUsed: false,
+    identityStatus: response.status,
+    idempotencyKeyPresent: true,
+    idempotencyReplay: true,
+  })
+  if (!evidence.evidenceComplete) {
+    safeSessionRemove(ROLE_WRITE_REPLAY_STORAGE_KEY)
+    throw new Error('Role-write idempotency replay returned incomplete guarded evidence.')
+  }
+
+  safeSessionRemove(ROLE_WRITE_REPLAY_STORAGE_KEY)
+  return { response, evidence }
+}
+
 export function getPluginUsers(params?: Record<string, unknown>): Promise<{ data: any }> {
   return getPluginUserReadonly('/users', params)
 }
@@ -536,7 +605,16 @@ function postPluginUserWrite(
 
   return identityPluginUserApi.post(path, payload, requestConfig).then((response) => {
     if (path === '/change-role') {
-      recordRoleWriteEvidence(response, { armedCanary, fallbackUsed: false, identityStatus: response.status })
+      const evidence = recordRoleWriteEvidence(response, {
+        armedCanary,
+        fallbackUsed: false,
+        identityStatus: response.status,
+        idempotencyKeyPresent: Boolean(armedCanary),
+        idempotencyReplay: false,
+      })
+      if (armedCanary && evidence.evidenceComplete) {
+        rememberGuardedRoleWriteReplay(armedCanary, payload)
+      }
       clearArmedRoleWriteCanary()
     }
     return response
@@ -547,6 +625,8 @@ function postPluginUserWrite(
         fallbackUsed: false,
         identityStatus: err.response?.status ?? null,
         failureCode: safeResponseCode(err),
+        idempotencyKeyPresent: true,
+        idempotencyReplay: false,
       })
       clearArmedRoleWriteCanary()
       return Promise.reject(err)
@@ -559,6 +639,8 @@ function postPluginUserWrite(
             fallbackUsed: true,
             identityStatus: err.response?.status ?? null,
             failureCode: safeResponseCode(err),
+            idempotencyKeyPresent: false,
+            idempotencyReplay: false,
           })
         }
         return response
@@ -569,18 +651,29 @@ function postPluginUserWrite(
 }
 
 function withRoleWriteCorrelation(config?: AxiosRequestConfig, armedCanary?: ArmedRoleWriteCanary | null): AxiosRequestConfig {
-  const headers = { ...(config?.headers as Record<string, unknown> | undefined) }
+  const headers = { ...(config?.headers as Record<string, string> | undefined) }
   const existing = headers['X-Identity-IAM-Role-Write-Correlation']
   return {
     ...config,
     headers: {
       ...headers,
-      'X-Identity-IAM-Role-Write-Correlation':
-        armedCanary?.correlationId ?? (typeof existing === 'string' && existing.length > 0
-          ? existing
-          : createRoleWriteCorrelationId()),
-      ...(armedCanary ? { 'X-Identity-IAM-Role-Write-Require-Dual-Write': '1' } : {}),
+      ...(armedCanary
+        ? guardedRoleWriteHeaders(armedCanary)
+        : {
+            'X-Identity-IAM-Role-Write-Correlation':
+              typeof existing === 'string' && existing.length > 0
+                ? existing
+                : createRoleWriteCorrelationId(),
+          }),
     },
+  }
+}
+
+function guardedRoleWriteHeaders(armedCanary: ArmedRoleWriteCanary): Record<string, string> {
+  return {
+    'X-Identity-IAM-Role-Write-Correlation': armedCanary.correlationId,
+    'X-Identity-IAM-Role-Write-Require-Dual-Write': '1',
+    'Idempotency-Key': roleWriteIdempotencyKey(armedCanary.correlationId),
   }
 }
 
@@ -591,8 +684,10 @@ function recordRoleWriteEvidence(
     fallbackUsed: boolean
     identityStatus: number | null
     failureCode?: string | null
+    idempotencyKeyPresent?: boolean
+    idempotencyReplay?: boolean
   }
-): void {
+): RoleWriteRequestEvidence {
   const correlationId = responseHeader(response, 'x-identity-iam-role-write-correlation')
   const route = responseHeader(response, 'x-identity-iam-role-write-route')
   const mode = responseHeader(response, 'x-identity-iam-role-write')
@@ -617,6 +712,8 @@ function recordRoleWriteEvidence(
     failureCode: context.failureCode ?? null,
     guarded: Boolean(armed),
     armHandoffClaimed: Boolean(armed?.handoffClaimed),
+    idempotencyKeyPresent: context.idempotencyKeyPresent === true,
+    idempotencyReplay: context.idempotencyReplay === true,
     evidenceComplete: Boolean(
       armed
       && armed.handoffClaimed === true
@@ -632,9 +729,11 @@ function recordRoleWriteEvidence(
       && actorFingerprint === armed.actorFingerprint
       && matchedSelectorKind === 'uid'
       && upstreamHost
+      && context.idempotencyKeyPresent === true
     ),
   }
   safeSessionSet(ROLE_WRITE_EVIDENCE_STORAGE_KEY, evidence)
+  return evidence
 }
 
 function responseHeader(response: AxiosResponse | undefined, name: string): string | null {
@@ -686,6 +785,51 @@ function isValidRoleWriteCanaryArm(armed: ArmedRoleWriteCanary | null): armed is
     && expiresAt - armedAt <= ROLE_WRITE_CANARY_ARM_TTL_MS
     && expiresAt <= now + ROLE_WRITE_CANARY_ARM_TTL_MS + ROLE_WRITE_CANARY_CLOCK_SKEW_MS
   )
+}
+
+function rememberGuardedRoleWriteReplay(armed: ArmedRoleWriteCanary, payload: unknown): void {
+  const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null
+  const targetId = Number(body?.id)
+  const role = body?.role
+  if (!Number.isInteger(targetId) || targetId <= 0 || !isReplayableRole(role)) {
+    safeSessionRemove(ROLE_WRITE_REPLAY_STORAGE_KEY)
+    return
+  }
+
+  safeSessionSet(ROLE_WRITE_REPLAY_STORAGE_KEY, {
+    correlationId: armed.correlationId,
+    actorFingerprint: armed.actorFingerprint,
+    targetId,
+    role,
+    idempotencyKey: roleWriteIdempotencyKey(armed.correlationId),
+    armedAt: armed.armedAt,
+    expiresAt: armed.expiresAt,
+  } satisfies GuardedRoleWriteReplay)
+}
+
+function isValidGuardedRoleWriteReplay(replay: GuardedRoleWriteReplay | null): replay is GuardedRoleWriteReplay {
+  if (!replay || !isSafeCorrelationId(replay.correlationId)) return false
+  if (!/^[a-f0-9]{16}$/.test(replay.actorFingerprint)) return false
+  if (!Number.isInteger(replay.targetId) || replay.targetId <= 0) return false
+  if (!isReplayableRole(replay.role)) return false
+  if (replay.idempotencyKey !== roleWriteIdempotencyKey(replay.correlationId)) return false
+
+  const armedAt = Date.parse(replay.armedAt)
+  const expiresAt = Date.parse(replay.expiresAt)
+  const now = Date.now()
+  return Number.isFinite(armedAt)
+    && Number.isFinite(expiresAt)
+    && armedAt <= now + ROLE_WRITE_CANARY_CLOCK_SKEW_MS
+    && expiresAt > now
+    && expiresAt - armedAt <= ROLE_WRITE_CANARY_ARM_TTL_MS
+}
+
+function isReplayableRole(role: unknown): role is GuardedRoleWriteReplay['role'] {
+  return role === 'user' || role === 'manager' || role === 'admin'
+}
+
+function roleWriteIdempotencyKey(correlationId: string): string {
+  return `role-write-canary:${correlationId}`
 }
 
 function safeSessionSet(key: string, value: unknown): boolean {
