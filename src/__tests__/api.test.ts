@@ -471,6 +471,7 @@ describe('Preservation', () => {
     expect(requestConfig.headers).toMatchObject({
       'X-Identity-IAM-Role-Write-Correlation': correlationId,
       'X-Identity-IAM-Role-Write-Require-Dual-Write': '1',
+      'Idempotency-Key': `role-write-canary:${correlationId}`,
     })
     expect(apiModule.getArmedRoleWriteCanary()).toBeNull()
     expect(apiModule.getLastRoleWriteRequestEvidence()).toMatchObject({
@@ -482,8 +483,65 @@ describe('Preservation', () => {
       identityStatus: 200,
       guarded: true,
       armHandoffClaimed: true,
+      idempotencyKeyPresent: true,
+      idempotencyReplay: false,
       evidenceComplete: true,
     })
+    expect(apiModule.getPendingRoleWriteReplay()).toMatchObject({
+      correlationId,
+      actorFingerprint,
+      targetId: 25,
+      role: 'manager',
+    })
+  })
+
+  it('replays a completed guarded role write with the same explicit idempotency key', async () => {
+    const apiModule = await import('../api/index')
+    const correlationId = 'phase4-explicit-idempotency-replay'
+    const actorFingerprint = '0123456789abcdef'
+    await armAndClaimThroughHost(apiModule, correlationId, actorFingerprint)
+
+    const response = {
+      status: 200,
+      data: { code: 0 },
+      headers: {
+        'x-identity-iam-role-write-correlation': correlationId,
+        'x-identity-iam-role-write-route': 'change-role',
+        'x-identity-iam-role-write': 'dual-write',
+        'x-identity-iam-role-write-decision': 'canary_actor_selected',
+        'x-identity-iam-role-write-entry': 'plugin-user-change-role',
+        'x-identity-iam-role-write-actor': actorFingerprint,
+        'x-identity-iam-role-write-selector-kind': 'uid',
+        'x-xrugc-upstream-host': 'identity.d.tmrpp.com',
+      },
+    } as any
+    const postSpy = vi.spyOn(apiModule.identityPluginUserApi, 'post').mockResolvedValue(response)
+    const previewSpy = vi.spyOn(apiModule.identityPluginUserApi, 'get').mockResolvedValue({
+      data: { code: 0, data: passingRoleWritePreview(correlationId, actorFingerprint) },
+    } as any)
+
+    await apiModule.changePluginUserRole(25, 'manager')
+    const replay = await apiModule.replayLastGuardedRoleWrite()
+
+    expect(previewSpy).toHaveBeenCalledWith('/role-write-decision', {
+      headers: { 'X-Identity-IAM-Role-Write-Correlation': correlationId },
+    })
+    expect(postSpy).toHaveBeenCalledTimes(2)
+    const firstConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const replayConfig = postSpy.mock.calls[1]?.[2] as AxiosRequestConfig
+    expect((firstConfig.headers as Record<string, string>)['Idempotency-Key'])
+      .toBe(`role-write-canary:${correlationId}`)
+    expect((replayConfig.headers as Record<string, string>)['Idempotency-Key'])
+      .toBe((firstConfig.headers as Record<string, string>)['Idempotency-Key'])
+    expect(postSpy.mock.calls[1]?.[1]).toEqual({ id: 25, role: 'manager' })
+    expect(replay.evidence).toMatchObject({
+      evidenceComplete: true,
+      idempotencyKeyPresent: true,
+      idempotencyReplay: true,
+      correlationId,
+      actorFingerprint,
+    })
+    expect(apiModule.getPendingRoleWriteReplay()).toBeNull()
   })
 
   it('never falls back to the legacy route when a host-guarded role write is rejected', async () => {
