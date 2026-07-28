@@ -609,7 +609,7 @@ function postPluginUserWrite(
         armedCanary,
         fallbackUsed: false,
         identityStatus: response.status,
-        idempotencyKeyPresent: Boolean(armedCanary),
+        idempotencyKeyPresent: true,
         idempotencyReplay: false,
       })
       if (armedCanary && evidence.evidenceComplete) {
@@ -639,7 +639,7 @@ function postPluginUserWrite(
             fallbackUsed: true,
             identityStatus: err.response?.status ?? null,
             failureCode: safeResponseCode(err),
-            idempotencyKeyPresent: false,
+            idempotencyKeyPresent: true,
             idempotencyReplay: false,
           })
         }
@@ -653,18 +653,20 @@ function postPluginUserWrite(
 function withRoleWriteCorrelation(config?: AxiosRequestConfig, armedCanary?: ArmedRoleWriteCanary | null): AxiosRequestConfig {
   const headers = { ...(config?.headers as Record<string, string> | undefined) }
   const existing = headers['X-Identity-IAM-Role-Write-Correlation']
+  const correlationId = armedCanary?.correlationId
+    ?? (typeof existing === 'string' && existing.length > 0
+      ? existing
+      : createRoleWriteCorrelationId())
+  const existingIdempotencyKey = headers['Idempotency-Key']
   return {
     ...config,
     headers: {
       ...headers,
-      ...(armedCanary
-        ? guardedRoleWriteHeaders(armedCanary)
-        : {
-            'X-Identity-IAM-Role-Write-Correlation':
-              typeof existing === 'string' && existing.length > 0
-                ? existing
-                : createRoleWriteCorrelationId(),
-          }),
+      'X-Identity-IAM-Role-Write-Correlation': correlationId,
+      'Idempotency-Key': typeof existingIdempotencyKey === 'string' && existingIdempotencyKey.length > 0
+        ? existingIdempotencyKey
+        : roleWriteIdempotencyKey(correlationId),
+      ...(armedCanary ? { 'X-Identity-IAM-Role-Write-Require-Dual-Write': '1' } : {}),
     },
   }
 }

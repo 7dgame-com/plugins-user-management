@@ -301,8 +301,12 @@ describe('Preservation', () => {
     const legacyConfig = legacyPostSpy.mock.calls[0]?.[2] as AxiosRequestConfig
     const identityCorrelation = (identityConfig.headers as Record<string, string>)['X-Identity-IAM-Role-Write-Correlation']
     const legacyCorrelation = (legacyConfig.headers as Record<string, string>)['X-Identity-IAM-Role-Write-Correlation']
+    const identityIdempotency = (identityConfig.headers as Record<string, string>)['Idempotency-Key']
+    const legacyIdempotency = (legacyConfig.headers as Record<string, string>)['Idempotency-Key']
     expect(identityCorrelation).toMatch(/^[A-Za-z0-9._:-]{8,128}$/)
     expect(legacyCorrelation).toBe(identityCorrelation)
+    expect(identityIdempotency).toBe(`role-write-canary:${identityCorrelation}`)
+    expect(legacyIdempotency).toBe(identityIdempotency)
   })
 
   it('previews the actual iframe operator selector without performing a write', async () => {
