@@ -17,6 +17,7 @@ const {
   messageError,
   messageWarning,
   messageSuccess,
+  validateForm,
 } = vi.hoisted(() => ({
   routeState: { params: {} as Record<string, string> },
   push: vi.fn(),
@@ -31,6 +32,7 @@ const {
   messageError: vi.fn(),
   messageWarning: vi.fn(),
   messageSuccess: vi.fn(),
+  validateForm: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -70,7 +72,7 @@ const ElFormStub = defineComponent({
   emits: ['submit'],
   setup(_, { expose }) {
     expose({
-      validate: () => Promise.resolve(true),
+      validate: (...args: unknown[]) => validateForm(...args),
     })
 
     return {}
@@ -156,6 +158,7 @@ describe('UserForm', () => {
     messageError.mockReset()
     messageWarning.mockReset()
     messageSuccess.mockReset()
+    validateForm.mockReset()
 
     verifyCurrentToken.mockResolvedValue({ data: { data: { roles: ['root'] } } })
     listOrganizations.mockResolvedValue({
@@ -171,6 +174,7 @@ describe('UserForm', () => {
     changePluginUserRole.mockResolvedValue({ data: { code: 0 } })
     createPluginUser.mockResolvedValue({ data: { code: 0 } })
     updatePluginUser.mockResolvedValue({ data: { code: 0 } })
+    validateForm.mockResolvedValue(true)
   })
 
   it('submits selected organization ids when creating a user', async () => {
@@ -246,6 +250,7 @@ describe('UserForm', () => {
     expect(wrapper.get('[data-testid="organization-select"]').exists()).toBe(true)
     ;(wrapper.vm as any).form.nickname = 'Alice Updated'
     ;(wrapper.vm as any).form.organization_ids = [2]
+    ;(wrapper.vm as any).form.password = ''
     await (wrapper.vm as any).handleSubmit()
     await flushPromises()
 
@@ -257,6 +262,51 @@ describe('UserForm', () => {
     expect(updatePluginUser).toHaveBeenCalledWith(expect.not.objectContaining({
       username: expect.anything(),
     }))
+    expect(updatePluginUser).toHaveBeenCalledWith(expect.not.objectContaining({
+      password: expect.anything(),
+    }))
+  })
+
+  it('does not report success when a 2xx response has a non-zero business code', async () => {
+    createPluginUser.mockResolvedValueOnce({
+      data: { code: 5001, message: '写入未完成' },
+    })
+
+    const wrapper = mountForm()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.username = 'alice'
+    ;(wrapper.vm as any).form.password = 'Secret123!'
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(messageWarning).toHaveBeenCalledWith('写入未完成')
+    expect(messageSuccess).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('takes the submit lock before validation resolves', async () => {
+    let resolveValidation!: (valid: boolean) => void
+    validateForm.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      resolveValidation = resolve
+    }))
+
+    const wrapper = mountForm()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.username = 'alice'
+    ;(wrapper.vm as any).form.password = 'Secret123!'
+    const firstSubmit = (wrapper.vm as any).handleSubmit()
+    const secondSubmit = (wrapper.vm as any).handleSubmit()
+
+    expect(validateForm).toHaveBeenCalledTimes(1)
+    expect(createPluginUser).not.toHaveBeenCalled()
+
+    resolveValidation(true)
+    await Promise.all([firstSubmit, secondSubmit])
+
+    expect(createPluginUser).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenCalledTimes(1)
   })
 
   it('does not send organization ids when organization options fail to load during edit', async () => {
