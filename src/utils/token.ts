@@ -39,7 +39,7 @@ export function removeAllTokens() {
   removeRefreshToken()
 }
 
-export function getTokenActorSubject(token: string | null | undefined): string | null {
+function decodeTokenPayload(token: string | null | undefined): Record<string, unknown> | null {
   if (!token) return null
 
   const encodedPayload = token.split('.')[1]
@@ -49,20 +49,74 @@ export function getTokenActorSubject(token: string | null | undefined): string |
     const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
     const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
-    const payload = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>
-    const subject = payload.uid ?? payload.sub
-    const numericSubject = typeof subject === 'number'
-      ? subject
-      : typeof subject === 'string' && /^\d+$/.test(subject.trim())
-        ? Number(subject)
-        : Number.NaN
-
-    return Number.isSafeInteger(numericSubject) && numericSubject > 0
-      ? `uid:${numericSubject}`
+    const payload = JSON.parse(new TextDecoder().decode(bytes)) as unknown
+    return payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
       : null
   } catch {
     return null
   }
+}
+
+export function getTokenActorSubject(token: string | null | undefined): string | null {
+  const payload = decodeTokenPayload(token)
+  if (!payload) return null
+
+  const subject = payload.uid ?? payload.sub
+  const numericSubject = typeof subject === 'number'
+    ? subject
+    : typeof subject === 'string' && /^\d+$/.test(subject.trim())
+      ? Number(subject)
+      : Number.NaN
+
+  return Number.isSafeInteger(numericSubject) && numericSubject > 0
+    ? `uid:${numericSubject}`
+    : null
+}
+
+export function isFreshAccessToken(
+  token: string | null | undefined,
+  nowMs = Date.now()
+): boolean {
+  const payload = decodeTokenPayload(token)
+  if (!payload) return false
+
+  const expiresAt = Number(payload.exp)
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= 0 || expiresAt * 1000 <= nowMs) {
+    return false
+  }
+
+  if (payload.nbf !== undefined) {
+    const notBefore = Number(payload.nbf)
+    if (!Number.isSafeInteger(notBefore) || notBefore * 1000 > nowMs) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * A refresh response is usable only when it supplies a new, currently valid
+ * access token for the same actor. JWT signature verification remains the
+ * backend's responsibility; this client-side check prevents obvious stale or
+ * expired host responses from being mistaken for a successful refresh.
+ */
+export function isUsableRefreshedToken(
+  currentToken: string | null | undefined,
+  nextToken: string | null | undefined,
+  nowMs = Date.now()
+): boolean {
+  if (!nextToken || nextToken === currentToken || !isFreshAccessToken(nextToken, nowMs)) {
+    return false
+  }
+
+  if (!currentToken) return true
+
+  const currentSubject = getTokenActorSubject(currentToken)
+  if (!currentSubject) return false
+
+  return getTokenActorSubject(nextToken) === currentSubject
 }
 
 export function haveSameTokenActor(

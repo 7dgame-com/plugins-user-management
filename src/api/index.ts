@@ -7,7 +7,8 @@ import {
   isInIframe,
   requestParentTokenRefresh,
   getRefreshToken,
-  setRefreshToken
+  setRefreshToken,
+  isUsableRefreshedToken
 } from '../utils/token'
 
 /**
@@ -74,17 +75,37 @@ function processQueue(error: Error | null, token: string | null) {
 /**
  * 两段式 token 刷新：
  * 1. iframe 模式下先请求主框架刷新
- * 2. 主框架超时后回退到本地 refresh token
+ * 2. 主框架超时或返回不可用 token 时回退到本地 refresh token
  * 两段均失败才返回 null，由上层触发 TOKEN_EXPIRED
  */
-async function tryRefreshToken(): Promise<string | null> {
+function acceptRefreshedToken(
+  staleToken: string | null,
+  candidateToken: string | null | undefined
+): string | null {
+  if (!isUsableRefreshedToken(staleToken, candidateToken)) {
+    return null
+  }
+
+  setToken(candidateToken!)
+  return candidateToken!
+}
+
+async function tryRefreshToken(staleToken: string | null): Promise<string | null> {
   if (isInIframe()) {
     const result = await requestParentTokenRefresh()
-    if (result?.accessToken) {
-      setToken(result.accessToken)
-      return result.accessToken
+    const parentToken = acceptRefreshedToken(staleToken, result?.accessToken)
+    if (parentToken) {
+      return parentToken
     }
-    // 主框架超时，回退到本地刷新
+
+    // TOKEN_UPDATE may have won the race before the dedicated refresh
+    // listener observed it. Reuse that newer local token when it is safe.
+    const racedToken = acceptRefreshedToken(staleToken, getToken())
+    if (racedToken) {
+      return racedToken
+    }
+
+    // 主框架超时或返回相同/过期 token，回退到本地刷新。
   }
 
   const refreshToken = getRefreshToken()
@@ -96,13 +117,13 @@ async function tryRefreshToken(): Promise<string | null> {
     const accessToken = tokenPayload?.accessToken ?? tokenPayload?.token
     const newRefreshToken = tokenPayload?.refreshToken
 
-    if (!accessToken) {
+    const acceptedAccessToken = acceptRefreshedToken(staleToken, accessToken)
+    if (!acceptedAccessToken) {
       return null
     }
 
-    setToken(accessToken)
     if (newRefreshToken) setRefreshToken(newRefreshToken)
-    return accessToken
+    return acceptedAccessToken
   } catch {
     return null
   }
@@ -117,14 +138,7 @@ async function getRequestToken(): Promise<string | null> {
   }
 
   if (!bootstrapTokenPromise) {
-    bootstrapTokenPromise = requestParentTokenRefresh()
-      .then((result) => {
-        const accessToken = result?.accessToken ?? getToken()
-        if (accessToken) {
-          setToken(accessToken)
-        }
-        return accessToken
-      })
+    bootstrapTokenPromise = tryRefreshToken(null)
       .finally(() => {
         bootstrapTokenPromise = null
       })
@@ -160,6 +174,14 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
         return Promise.reject(err)
       }
 
+      const staleToken = accessTokenFromAuthorization(originalRequest.headers.Authorization)
+      const alreadyUpdatedToken = acceptRefreshedToken(staleToken, getToken())
+      if (alreadyUpdatedToken) {
+        originalRequest._retry = true
+        originalRequest.headers.Authorization = `Bearer ${alreadyUpdatedToken}`
+        return instance(originalRequest)
+      }
+
       if (isRefreshing) {
         return new Promise<string>((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -174,7 +196,7 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
       isRefreshing = true
 
       try {
-        const newToken = await tryRefreshToken()
+        const newToken = await tryRefreshToken(staleToken)
 
         if (!newToken) {
           throw new Error('Token refresh failed')
@@ -184,6 +206,13 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
         originalRequest.headers.Authorization = `Bearer ${newToken}`
         return instance(originalRequest)
       } catch (refreshError) {
+        const racedToken = acceptRefreshedToken(staleToken, getToken())
+        if (racedToken) {
+          processQueue(null, racedToken)
+          originalRequest.headers.Authorization = `Bearer ${racedToken}`
+          return instance(originalRequest)
+        }
+
         removeAllTokens()
 
         if (isInIframe()) {
@@ -203,6 +232,16 @@ function setupInterceptors(instance: ReturnType<typeof axios.create>) {
       }
     }
   )
+}
+
+function accessTokenFromAuthorization(value: unknown): string | null {
+  const authorization = typeof value === 'string'
+    ? value
+    : value && typeof (value as { toString?: unknown }).toString === 'function'
+      ? String(value)
+      : ''
+  const match = authorization.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() || null
 }
 
 setupInterceptors(userApi)

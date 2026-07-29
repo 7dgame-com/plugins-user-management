@@ -9,6 +9,8 @@ import {
   requestParentTokenRefresh,
   getTokenActorSubject,
   haveSameTokenActor,
+  isFreshAccessToken,
+  isUsableRefreshedToken,
 } from '../utils/token'
 
 function testJwt(payload: Record<string, unknown>): string {
@@ -99,5 +101,43 @@ describe('Preservation', () => {
     expect(haveSameTokenActor(currentToken, '')).toBe(false)
     expect(haveSameTokenActor(currentToken, 'not-a-jwt')).toBe(false)
     expect(haveSameTokenActor(testJwt({ sub: 'actor-name' }), currentToken)).toBe(false)
+  })
+
+  it('accepts only a currently valid access token as a refresh candidate', () => {
+    const nowMs = 2_000_000_000_000
+    const freshToken = testJwt({ uid: 3, exp: 2_000_000_060, jti: 'fresh' })
+    const expiredToken = testJwt({ uid: 3, exp: 1_999_999_999, jti: 'expired' })
+    const notYetValidToken = testJwt({
+      uid: 3,
+      exp: 2_000_000_060,
+      nbf: 2_000_000_001,
+      jti: 'future',
+    })
+
+    expect(isFreshAccessToken(freshToken, nowMs)).toBe(true)
+    expect(isFreshAccessToken(expiredToken, nowMs)).toBe(false)
+    expect(isFreshAccessToken(notYetValidToken, nowMs)).toBe(false)
+    expect(isFreshAccessToken('not-a-jwt', nowMs)).toBe(false)
+  })
+
+  it('rejects an unchanged or expired token returned by a refresh', () => {
+    const nowMs = 2_000_000_000_000
+    const currentToken = testJwt({ uid: 3, exp: 2_000_000_060, jti: 'before' })
+    const expiredToken = testJwt({ uid: 3, exp: 1_999_999_999, jti: 'expired' })
+
+    expect(isUsableRefreshedToken(currentToken, currentToken, nowMs)).toBe(false)
+    expect(isUsableRefreshedToken(currentToken, expiredToken, nowMs)).toBe(false)
+  })
+
+  it('accepts a new fresh token only for the same actor when the current actor is known', () => {
+    const nowMs = 2_000_000_000_000
+    const currentToken = testJwt({ uid: 3, exp: 2_000_000_060, jti: 'before' })
+    const sameActorToken = testJwt({ uid: 3, exp: 2_000_000_120, jti: 'after' })
+    const differentActorToken = testJwt({ uid: 613, exp: 2_000_000_120, jti: 'other' })
+
+    expect(isUsableRefreshedToken(null, sameActorToken, nowMs)).toBe(true)
+    expect(isUsableRefreshedToken(currentToken, sameActorToken, nowMs)).toBe(true)
+    expect(isUsableRefreshedToken(currentToken, differentActorToken, nowMs)).toBe(false)
+    expect(isUsableRefreshedToken('not-a-jwt', sameActorToken, nowMs)).toBe(false)
   })
 })
