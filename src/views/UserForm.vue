@@ -241,10 +241,7 @@ async function handleSubmit() {
 
     if (isEdit.value) {
       const response = await updatePluginUser({ id: route.params.id, ...payload })
-      assertPluginUserWriteSucceeded(response, {
-        id: route.params.id as string,
-        username: form.username,
-      })
+      assertPluginUserWriteSucceeded(response)
       // If role changed, update separately
       if (canEditRole.value && form.role && form.role !== originalRole.value) {
         if (form.role === 'root') {
@@ -256,7 +253,7 @@ async function handleSubmit() {
       ElMessage.success(t('user.messages.updateSuccess'))
     } else {
       const response = await createPluginUser(payload)
-      assertPluginUserWriteSucceeded(response, { username: form.username })
+      assertPluginUserWriteSucceeded(response)
       ElMessage.success(t('user.messages.createSuccess'))
     }
     router.push('/users')
@@ -267,24 +264,9 @@ async function handleSubmit() {
   }
 }
 
-function assertPluginUserWriteSucceeded(
-  response: { data?: unknown },
-  expectedUser: { id?: string | number; username: string }
-): void {
+function assertPluginUserWriteSucceeded(response: { data?: unknown }): void {
   const body = isRecord(response?.data) ? response.data : null
   if (body?.code === 0 || body?.code === '0') return
-
-  // Production legacy deployments may return the managed user directly (or
-  // below `data`) instead of the newer `{ code: 0, data: user }` envelope.
-  // Treat that shape as success only when it proves this exact user was
-  // written; never infer success from a generic HTTP 2xx response.
-  if (body && body.code === undefined) {
-    const legacyUser = isRecord(body.data) ? body.data : body
-    const idMatches = expectedUser.id === undefined
-      ? isPositiveUserId(legacyUser.id)
-      : String(legacyUser.id) === String(expectedUser.id)
-    if (idMatches && legacyUser.username === expectedUser.username) return
-  }
 
   const message = typeof body?.message === 'string'
     ? body.message
@@ -306,11 +288,6 @@ function assertPluginUserWriteSucceeded(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isPositiveUserId(value: unknown): boolean {
-  const numeric = Number(value)
-  return Number.isInteger(numeric) && numeric > 0
 }
 
 onMounted(() => {
