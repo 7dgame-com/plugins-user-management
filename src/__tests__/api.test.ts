@@ -13,7 +13,7 @@ vi.mock('../utils/token', async (importOriginal) => {
 
 describe('Bug Condition Exploration', () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks() })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
   it('Bug 2: TOKEN_EXPIRED should NOT be sent when local refresh token exists', async () => {
     // local refresh token present — fixed code should try it before sending TOKEN_EXPIRED
@@ -67,7 +67,7 @@ describe('Preservation', () => {
     vi.mocked(m.isInIframe).mockReturnValue(true)
     vi.mocked(m.requestParentTokenRefresh).mockResolvedValue(null)
   })
-  afterEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
   it('non-401 responses do not trigger token refresh', async () => {
     const { requestParentTokenRefresh } = await import('../utils/token')
@@ -190,6 +190,38 @@ describe('Preservation', () => {
     }
   })
 
+  it('reuses the same write idempotency key when Axios retries after a 401 refresh', async () => {
+    const tokenModule = await import('../utils/token')
+    localStorage.setItem('user-mgmt-token', 'old-token')
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: 'new-token' })
+    const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
+
+    const idempotencyKeys: string[] = []
+    let callCount = 0
+    const originalAdapter = identityPluginUserApi.defaults.adapter
+    identityPluginUserApi.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
+      callCount++
+      idempotencyKeys.push(String(config.headers['Idempotency-Key']))
+      if (callCount === 1) {
+        throw Object.assign(new Error('Unauthorized'), {
+          response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
+          config, isAxiosError: true,
+        })
+      }
+      return { status: 200, statusText: 'OK', data: { code: 0 }, headers: {}, config }
+    }
+
+    try {
+      await updatePluginUser({ id: 25, nickname: 'Manager' })
+
+      expect(idempotencyKeys).toHaveLength(2)
+      expect(idempotencyKeys[0]).toBeTruthy()
+      expect(idempotencyKeys[1]).toBe(idempotencyKeys[0])
+    } finally {
+      identityPluginUserApi.defaults.adapter = originalAdapter
+    }
+  })
+
   it('batchCreateUsers uses identity write proxy and disables the short default timeout for long-running jobs', async () => {
     const { identityPluginUserApi, batchCreateUsers } = await import('../api/index')
     const payload = {
@@ -213,7 +245,62 @@ describe('Preservation', () => {
 
     await batchCreateUsers(payload)
 
-    expect(postSpy).toHaveBeenCalledWith('/batch-create-users', payload, { timeout: 0 })
+    expect(postSpy).toHaveBeenCalledWith('/batch-create-users', payload, {
+      timeout: 0,
+      headers: {
+        'Idempotency-Key': expect.any(String),
+      },
+    })
+    const requestConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    expect((requestConfig.headers as Record<string, string>)['Idempotency-Key']).not.toBe('')
+  })
+
+  it('creates a fresh non-empty idempotency key for every updatePluginUser call', async () => {
+    const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
+    const postSpy = vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
+      data: { code: 0 },
+    } as any)
+
+    await updatePluginUser({ id: 25, nickname: 'First update' })
+    await updatePluginUser({ id: 25, nickname: 'Second update' })
+
+    const firstConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const secondConfig = postSpy.mock.calls[1]?.[2] as AxiosRequestConfig
+    const firstKey = (firstConfig.headers as Record<string, string>)['Idempotency-Key']
+    const secondKey = (secondConfig.headers as Record<string, string>)['Idempotency-Key']
+    expect(firstKey).toBeTruthy()
+    expect(secondKey).toBeTruthy()
+    expect(secondKey).not.toBe(firstKey)
+  })
+
+  it('uses getRandomValues when randomUUID is unavailable', async () => {
+    const getRandomValues = vi.fn((bytes: Uint8Array) => {
+      bytes.forEach((_, index) => { bytes[index] = index })
+      return bytes
+    })
+    vi.stubGlobal('crypto', { getRandomValues })
+    const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
+    const postSpy = vi.spyOn(identityPluginUserApi, 'post').mockResolvedValue({
+      data: { code: 0 },
+    } as any)
+
+    await updatePluginUser({ id: 25, nickname: 'CSPRNG fallback' })
+
+    const requestConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    expect(getRandomValues).toHaveBeenCalledTimes(1)
+    expect((requestConfig.headers as Record<string, string>)['Idempotency-Key'])
+      .toBe('00010203-0405-4607-8809-0a0b0c0d0e0f')
+  })
+
+  it('fails closed before sending a write when Web Crypto is unavailable', async () => {
+    vi.stubGlobal('crypto', {})
+    const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
+    const postSpy = vi.spyOn(identityPluginUserApi, 'post')
+
+    expect(() => updatePluginUser({ id: 25, nickname: 'Unsafe write' }))
+      .toThrow('Secure random generation is unavailable')
+
+    expect(postSpy).not.toHaveBeenCalled()
   })
 
   it('getPluginUserLoginAudit reads from the identity plugin-user endpoint', async () => {
@@ -256,8 +343,14 @@ describe('Preservation', () => {
 
     await createPluginUser(payload)
 
-    expect(identityPostSpy).toHaveBeenCalledWith('/create-user', payload, undefined)
-    expect(legacyPostSpy).toHaveBeenCalledWith('/create-user', payload, undefined)
+    const identityConfig = identityPostSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const legacyConfig = legacyPostSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const identityIdempotency = (identityConfig.headers as Record<string, string>)['Idempotency-Key']
+    const legacyIdempotency = (legacyConfig.headers as Record<string, string>)['Idempotency-Key']
+    expect(identityPostSpy).toHaveBeenCalledWith('/create-user', payload, identityConfig)
+    expect(legacyPostSpy).toHaveBeenCalledWith('/create-user', payload, legacyConfig)
+    expect(identityIdempotency).toBeTruthy()
+    expect(legacyIdempotency).toBe(identityIdempotency)
   })
 
   it('does not repeat write requests when identity write proxy returns a legacy validation error', async () => {
