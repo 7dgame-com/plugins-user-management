@@ -220,12 +220,14 @@ async function loadOrganizations() {
 }
 
 async function handleSubmit() {
-  if (formRef.value) {
-    const valid = await formRef.value.validate().catch(() => false)
-    if (!valid) return
-  }
+  if (loading.value) return
   loading.value = true
   try {
+    if (formRef.value) {
+      const valid = await formRef.value.validate().catch(() => false)
+      if (!valid) return
+    }
+
     const payload: any = {
       nickname: form.nickname,
       email: form.email,
@@ -238,7 +240,8 @@ async function handleSubmit() {
     }
 
     if (isEdit.value) {
-      await updatePluginUser({ id: route.params.id, ...payload })
+      const response = await updatePluginUser({ id: route.params.id, ...payload })
+      assertPluginUserWriteSucceeded(response)
       // If role changed, update separately
       if (canEditRole.value && form.role && form.role !== originalRole.value) {
         if (form.role === 'root') {
@@ -249,7 +252,8 @@ async function handleSubmit() {
       }
       ElMessage.success(t('user.messages.updateSuccess'))
     } else {
-      await createPluginUser(payload)
+      const response = await createPluginUser(payload)
+      assertPluginUserWriteSucceeded(response)
       ElMessage.success(t('user.messages.createSuccess'))
     }
     router.push('/users')
@@ -258,6 +262,21 @@ async function handleSubmit() {
   } finally {
     loading.value = false
   }
+}
+
+function assertPluginUserWriteSucceeded(response: { data?: { code?: unknown; message?: unknown } }): void {
+  if (response?.data?.code === 0) return
+
+  const message = typeof response?.data?.message === 'string'
+    ? response.data.message
+    : t('user.messages.operationFailed')
+  const error = Object.assign(new Error(message), {
+    response: {
+      status: 200,
+      data: response?.data,
+    },
+  })
+  throw error
 }
 
 onMounted(() => {
