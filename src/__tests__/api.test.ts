@@ -11,6 +11,20 @@ vi.mock('../utils/token', async (importOriginal) => {
   }
 })
 
+function testAccessToken({
+  uid = 24,
+  exp = Math.floor(Date.now() / 1000) + 3600,
+  jti = 'test-token',
+}: {
+  uid?: number
+  exp?: number
+  jti?: string
+} = {}): string {
+  const encode = (value: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encode({ alg: 'ES256', typ: 'JWT' })}.${encode({ uid, exp, jti })}.test-signature`
+}
+
 describe('Bug Condition Exploration', () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks() })
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
@@ -81,8 +95,9 @@ describe('Preservation', () => {
 
   it('waits for the parent token before sending the first embedded request', async () => {
     const tokenModule = await import('../utils/token')
+    const parentToken = testAccessToken({ jti: 'bootstrap-parent-token' })
     vi.mocked(tokenModule.isInIframe).mockReturnValue(true)
-    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: 'parent-token' })
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: parentToken })
 
     const { default: api } = await import('../api/index')
 
@@ -90,7 +105,7 @@ describe('Preservation', () => {
     const originalAdapter = api.defaults.adapter
     api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
       callCount += 1
-      expect(config.headers.Authorization).toBe('Bearer parent-token')
+      expect(config.headers.Authorization).toBe(`Bearer ${parentToken}`)
 
       return {
         status: 200,
@@ -107,7 +122,7 @@ describe('Preservation', () => {
       expect(response.data).toEqual({ ok: true })
       expect(callCount).toBe(1)
       expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalledTimes(1)
-      expect(localStorage.getItem('user-mgmt-token')).toBe('parent-token')
+      expect(localStorage.getItem('user-mgmt-token')).toBe(parentToken)
     } finally {
       api.defaults.adapter = originalAdapter
     }
@@ -115,8 +130,10 @@ describe('Preservation', () => {
 
   it('401 + parent refresh succeeds: original request is retried transparently', async () => {
     const tokenModule = await import('../utils/token')
-    localStorage.setItem('user-mgmt-token', 'old-token')
-    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: 'new-token' })
+    const oldToken = testAccessToken({ jti: 'parent-refresh-before' })
+    const newToken = testAccessToken({ jti: 'parent-refresh-after' })
+    localStorage.setItem('user-mgmt-token', oldToken)
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: newToken })
     const { default: api } = await import('../api/index')
 
     let callCount = 0
@@ -124,13 +141,13 @@ describe('Preservation', () => {
     api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
       callCount++
       if (callCount === 1) {
-        expect(config.headers.Authorization).toBe('Bearer old-token')
+        expect(config.headers.Authorization).toBe(`Bearer ${oldToken}`)
         throw Object.assign(new Error('Unauthorized'), {
           response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
           config, isAxiosError: true,
         })
       }
-      expect(config.headers.Authorization).toBe('Bearer new-token')
+      expect(config.headers.Authorization).toBe(`Bearer ${newToken}`)
       return { status: 200, statusText: 'OK', data: { success: true }, headers: {}, config }
     }
 
@@ -147,13 +164,15 @@ describe('Preservation', () => {
     const tokenModule = await import('../utils/token')
     vi.mocked(tokenModule.isInIframe).mockReturnValue(true)
     vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce(null)
-    localStorage.setItem('user-mgmt-token', 'old-token')
+    const oldToken = testAccessToken({ jti: 'local-refresh-before' })
+    const localNewToken = testAccessToken({ jti: 'local-refresh-after' })
+    localStorage.setItem('user-mgmt-token', oldToken)
     localStorage.setItem('user-mgmt-refresh-token', 'old-refresh')
 
     const axiosPostSpy = vi.spyOn(axios, 'post').mockResolvedValueOnce({
       data: {
         token: {
-          accessToken: 'local-new-token',
+          accessToken: localNewToken,
           refreshToken: 'local-new-refresh',
         },
       },
@@ -165,13 +184,13 @@ describe('Preservation', () => {
     api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
       callCount++
       if (callCount === 1) {
-        expect(config.headers.Authorization).toBe('Bearer old-token')
+        expect(config.headers.Authorization).toBe(`Bearer ${oldToken}`)
         throw Object.assign(new Error('Unauthorized'), {
           response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
           config, isAxiosError: true,
         })
       }
-      expect(config.headers.Authorization).toBe('Bearer local-new-token')
+      expect(config.headers.Authorization).toBe(`Bearer ${localNewToken}`)
       return { status: 200, statusText: 'OK', data: { success: true }, headers: {}, config }
     }
 
@@ -182,7 +201,7 @@ describe('Preservation', () => {
       expect(axiosPostSpy).toHaveBeenCalledWith('/api/v1/auth/refresh', {
         refreshToken: 'old-refresh',
       })
-      expect(localStorage.getItem('user-mgmt-token')).toBe('local-new-token')
+      expect(localStorage.getItem('user-mgmt-token')).toBe(localNewToken)
       expect(localStorage.getItem('user-mgmt-refresh-token')).toBe('local-new-refresh')
     } finally {
       api.defaults.adapter = originalAdapter
@@ -192,8 +211,10 @@ describe('Preservation', () => {
 
   it('reuses the same write idempotency key when Axios retries after a 401 refresh', async () => {
     const tokenModule = await import('../utils/token')
-    localStorage.setItem('user-mgmt-token', 'old-token')
-    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: 'new-token' })
+    const oldToken = testAccessToken({ jti: 'write-refresh-before' })
+    const newToken = testAccessToken({ jti: 'write-refresh-after' })
+    localStorage.setItem('user-mgmt-token', oldToken)
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({ accessToken: newToken })
     const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
 
     const idempotencyKeys: string[] = []
@@ -219,6 +240,158 @@ describe('Preservation', () => {
       expect(idempotencyKeys[1]).toBe(idempotencyKeys[0])
     } finally {
       identityPluginUserApi.defaults.adapter = originalAdapter
+    }
+  })
+
+  it.each([
+    ['the same token', (oldToken: string) => oldToken],
+    [
+      'an expired token',
+      () => testAccessToken({
+        exp: Math.floor(Date.now() / 1000) - 60,
+        jti: 'expired-parent-refresh',
+      }),
+    ],
+  ])('falls back to local refresh when the parent returns %s and keeps the write idempotency key', async (
+    _caseName,
+    parentTokenFactory,
+  ) => {
+    const tokenModule = await import('../utils/token')
+    const oldToken = testAccessToken({ jti: 'unsafe-parent-before' })
+    const localNewToken = testAccessToken({ jti: 'safe-local-after' })
+    localStorage.setItem('user-mgmt-token', oldToken)
+    localStorage.setItem('user-mgmt-refresh-token', 'local-refresh-token')
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({
+      accessToken: parentTokenFactory(oldToken),
+    })
+
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockResolvedValueOnce({
+      data: {
+        token: {
+          accessToken: localNewToken,
+          refreshToken: 'rotated-local-refresh-token',
+        },
+      },
+    })
+    const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
+
+    const idempotencyKeys: string[] = []
+    const authorizationHeaders: string[] = []
+    let callCount = 0
+    const originalAdapter = identityPluginUserApi.defaults.adapter
+    identityPluginUserApi.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
+      callCount += 1
+      idempotencyKeys.push(String(config.headers['Idempotency-Key']))
+      authorizationHeaders.push(String(config.headers.Authorization))
+      if (callCount === 1) {
+        throw Object.assign(new Error('Unauthorized'), {
+          response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
+          config, isAxiosError: true,
+        })
+      }
+      return { status: 200, statusText: 'OK', data: { code: 0 }, headers: {}, config }
+    }
+
+    try {
+      await updatePluginUser({ id: 25, nickname: 'Safe retry' })
+
+      expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalledTimes(1)
+      expect(axiosPostSpy).toHaveBeenCalledWith('/api/v1/auth/refresh', {
+        refreshToken: 'local-refresh-token',
+      })
+      expect(authorizationHeaders).toEqual([
+        `Bearer ${oldToken}`,
+        `Bearer ${localNewToken}`,
+      ])
+      expect(idempotencyKeys).toHaveLength(2)
+      expect(idempotencyKeys[0]).toBeTruthy()
+      expect(idempotencyKeys[1]).toBe(idempotencyKeys[0])
+      expect(localStorage.getItem('user-mgmt-token')).toBe(localNewToken)
+      expect(localStorage.getItem('user-mgmt-refresh-token')).toBe('rotated-local-refresh-token')
+    } finally {
+      identityPluginUserApi.defaults.adapter = originalAdapter
+      axiosPostSpy.mockRestore()
+    }
+  })
+
+  it('retries with a safely newer local token when TOKEN_UPDATE wins the 401 race', async () => {
+    const tokenModule = await import('../utils/token')
+    const oldToken = testAccessToken({ jti: 'race-before' })
+    const racedToken = testAccessToken({ jti: 'race-after' })
+    localStorage.setItem('user-mgmt-token', oldToken)
+    const axiosPostSpy = vi.spyOn(axios, 'post')
+    const { identityPluginUserApi, updatePluginUser } = await import('../api/index')
+
+    const idempotencyKeys: string[] = []
+    const authorizationHeaders: string[] = []
+    let callCount = 0
+    const originalAdapter = identityPluginUserApi.defaults.adapter
+    identityPluginUserApi.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
+      callCount += 1
+      idempotencyKeys.push(String(config.headers['Idempotency-Key']))
+      authorizationHeaders.push(String(config.headers.Authorization))
+      if (callCount === 1) {
+        localStorage.setItem('user-mgmt-token', racedToken)
+        throw Object.assign(new Error('Unauthorized'), {
+          response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
+          config, isAxiosError: true,
+        })
+      }
+      return { status: 200, statusText: 'OK', data: { code: 0 }, headers: {}, config }
+    }
+
+    try {
+      await updatePluginUser({ id: 25, nickname: 'Race-safe retry' })
+
+      expect(tokenModule.requestParentTokenRefresh).not.toHaveBeenCalled()
+      expect(axiosPostSpy).not.toHaveBeenCalled()
+      expect(authorizationHeaders).toEqual([
+        `Bearer ${oldToken}`,
+        `Bearer ${racedToken}`,
+      ])
+      expect(idempotencyKeys).toHaveLength(2)
+      expect(idempotencyKeys[1]).toBe(idempotencyKeys[0])
+      expect(localStorage.getItem('user-mgmt-token')).toBe(racedToken)
+    } finally {
+      identityPluginUserApi.defaults.adapter = originalAdapter
+      axiosPostSpy.mockRestore()
+    }
+  })
+
+  it('fails closed without retrying when the parent returns an expired token and no local refresh exists', async () => {
+    const tokenModule = await import('../utils/token')
+    const oldToken = testAccessToken({ jti: 'fail-closed-before' })
+    const expiredParentToken = testAccessToken({
+      exp: Math.floor(Date.now() / 1000) - 60,
+      jti: 'fail-closed-expired-parent',
+    })
+    localStorage.setItem('user-mgmt-token', oldToken)
+    vi.mocked(tokenModule.requestParentTokenRefresh).mockResolvedValueOnce({
+      accessToken: expiredParentToken,
+    })
+    const postMessageSpy = vi.spyOn(window.parent, 'postMessage')
+    const { default: api } = await import('../api/index')
+
+    let callCount = 0
+    const originalAdapter = api.defaults.adapter
+    api.defaults.adapter = async (config: import('axios').InternalAxiosRequestConfig) => {
+      callCount += 1
+      throw Object.assign(new Error('Unauthorized'), {
+        response: { status: 401, data: {}, headers: {}, config, statusText: 'Unauthorized' },
+        config, isAxiosError: true,
+      })
+    }
+
+    try {
+      await expect(api.get('/test-expired-parent')).rejects.toThrow('Token refresh failed')
+
+      expect(callCount).toBe(1)
+      expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalledTimes(1)
+      expect(localStorage.getItem('user-mgmt-token')).toBeNull()
+      expect(postMessageSpy.mock.calls.filter(([message]) => message?.type === 'TOKEN_EXPIRED'))
+        .toHaveLength(1)
+    } finally {
+      api.defaults.adapter = originalAdapter
     }
   })
 
