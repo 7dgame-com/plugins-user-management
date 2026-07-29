@@ -975,7 +975,7 @@ function createPluginUserWriteIdempotencyKey(): string {
     const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'))
     return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`
   }
-  throw new Error('Secure random generation is unavailable; refusing to send a user write')
+  throw new Error('Secure random generation is unavailable. Refresh the page or upgrade your browser before retrying.')
 }
 
 function shouldFallbackToLegacyPluginUser(err: AxiosError): boolean {

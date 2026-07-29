@@ -299,6 +299,8 @@ describe('Preservation', () => {
 
     expect(() => updatePluginUser({ id: 25, nickname: 'Unsafe write' }))
       .toThrow('Secure random generation is unavailable')
+    expect(() => updatePluginUser({ id: 25, nickname: 'Unsafe write' }))
+      .toThrow(/Refresh the page or upgrade your browser/)
 
     expect(postSpy).not.toHaveBeenCalled()
   })
