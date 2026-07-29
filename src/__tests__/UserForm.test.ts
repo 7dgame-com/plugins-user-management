@@ -285,7 +285,7 @@ describe('UserForm', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
-  it('accepts a legacy direct-user success response only for the edited user', async () => {
+  it('rejects a 2xx direct-user response without an explicit zero business code', async () => {
     routeState.params = { id: '42' }
     apiGet.mockResolvedValue({
       data: {
@@ -315,9 +315,9 @@ describe('UserForm', () => {
     await (wrapper.vm as any).handleSubmit()
     await flushPromises()
 
-    expect(messageWarning).not.toHaveBeenCalled()
-    expect(messageSuccess).toHaveBeenCalled()
-    expect(push).toHaveBeenCalledWith('/users')
+    expect(messageWarning).toHaveBeenCalledWith('user.messages.operationFailed')
+    expect(messageSuccess).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
   })
 
   it('rejects a legacy direct-user response for a different user without exposing its fields', async () => {

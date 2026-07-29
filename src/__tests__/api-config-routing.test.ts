@@ -38,6 +38,36 @@ describe('user-management auth-session routing semantics', () => {
     expect(nginxTemplate).not.toContain('# __CONFIG_LOCATIONS__')
   })
 
+  it('allows the same idempotency headers in every nginx runtime config', () => {
+    const configPaths = ['nginx.conf', 'docker-local.conf', 'nginx.conf.template']
+    const allowHeaders = configPaths.map((configPath) => {
+      const config = readFileSync(resolve(process.cwd(), configPath), 'utf8')
+      const match = config.match(/Access-Control-Allow-Headers'\s+'([^']+)'/)
+
+      expect(match, `${configPath} must declare Access-Control-Allow-Headers`).not.toBeNull()
+      return match![1].split(',').map(header => header.trim())
+    })
+
+    expect(allowHeaders[1]).toEqual(allowHeaders[0])
+    expect(allowHeaders[2]).toEqual(allowHeaders[0])
+    expect(allowHeaders[0]).toEqual(expect.arrayContaining([
+      'Idempotency-Key',
+      'X-Idempotency-Key',
+    ]))
+  })
+
+  it('keeps CORS headers and handles preflight inside generated proxy locations', () => {
+    const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
+    const allowHeaders = "add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Idempotency-Key' always;"
+
+    // Single-backend, weighted primary, and failover locations each declare
+    // their own headers because any add_header in a location disables Nginx's
+    // inheritance from the server block.
+    expect(entrypoint.split(allowHeaders)).toHaveLength(4)
+    // OPTIONS is terminated before either direct or weighted proxying.
+    expect(entrypoint.split("if (\\$request_method = 'OPTIONS')")).toHaveLength(3)
+  })
+
   it('docker runtime wires /api-auth to APP_AUTH upstreams', () => {
     const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
 

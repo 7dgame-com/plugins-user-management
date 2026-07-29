@@ -99,9 +99,13 @@ generate_lb_config() {
 
     echo "[entrypoint] Mode: single backend (direct upstream)"
 
-    CHAIN_RESULT="
+  CHAIN_RESULT="
     # ============ 反向代理 - ${LOC_PATH} (单后端直连) ============
     location ${LOC_PATH} {
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+
         rewrite ^${LOC_PATH}(.*)\$ /\$1 break;
         proxy_pass ${url};
 
@@ -113,6 +117,9 @@ generate_lb_config() {
         proxy_set_header X-Forwarded-Proto \$scheme;
         add_header X-XRUGC-Upstream-Host ${host} always;
         add_header X-Upstream-Addr \$upstream_addr always;
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Idempotency-Key' always;
 
         # 超时配置
         proxy_connect_timeout 5s;
@@ -249,6 +256,10 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
   CHAIN_RESULT="
     # ============ 反向代理 - ${LOC_PATH} (负载均衡 + Failover) ============
     location ${LOC_PATH} {
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+
         rewrite ^${LOC_PATH}(.*)\$ /\$1 break;
         proxy_pass \$${PREFIX_NAME}_backend_url;
 
@@ -260,6 +271,9 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
         proxy_set_header X-Forwarded-Proto \$scheme;
         add_header X-XRUGC-Upstream-Host \$${PREFIX_NAME}_backend_host always;
         add_header X-Upstream-Addr \$upstream_addr always;
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Idempotency-Key' always;
 
         # 超时配置（快速失败以便切 failover）
         proxy_connect_timeout 5s;
@@ -284,6 +298,9 @@ map \$${PREFIX_NAME}_pool \$${PREFIX_NAME}_fb_host {"
         proxy_set_header X-Forwarded-Proto \$scheme;
         add_header X-XRUGC-Upstream-Host \$${PREFIX_NAME}_fb_host always;
         add_header X-Upstream-Addr \$upstream_addr always;
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
+        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,Idempotency-Key,X-Idempotency-Key' always;
 
         # 超时配置
         proxy_connect_timeout 5s;
