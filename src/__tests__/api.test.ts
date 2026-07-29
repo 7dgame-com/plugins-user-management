@@ -346,6 +346,23 @@ describe('Preservation', () => {
     }
   }
 
+  function passingIdentityNativeRoleWritePreview(correlationId: string, actorFingerprint: string) {
+    return {
+      writePerformed: false as const,
+      sourceOfTruth: 'legacy' as const,
+      roleWriteMode: 'identity-native',
+      rolloutMode: 'canary',
+      selected: true,
+      reason: 'canary_actor_selected',
+      identityNativeExecutable: true,
+      missingCapabilities: [],
+      correlationId,
+      route: 'change-role' as const,
+      actorFingerprint,
+      matchedSelectorKind: 'uid',
+    }
+  }
+
   async function armAndClaimThroughHost(
     apiModule: typeof import('../api/index'),
     correlationId: string,
@@ -543,6 +560,70 @@ describe('Preservation', () => {
       idempotencyKeyPresent: true,
       idempotencyReplay: true,
       correlationId,
+      actorFingerprint,
+    })
+    expect(apiModule.getPendingRoleWriteReplay()).toBeNull()
+  })
+
+  it('replays a completed identity-native role write with the same explicit idempotency key', async () => {
+    const apiModule = await import('../api/index')
+    const actorFingerprint = '0123456789abcdef'
+    const postSpy = vi.spyOn(apiModule.identityPluginUserApi, 'post').mockImplementation(async (_url, _body, config) => {
+      const headers = config?.headers as Record<string, string>
+      const correlationId = headers['X-Identity-IAM-Role-Write-Correlation']
+      return {
+        status: 200,
+        data: { code: 0 },
+        headers: {
+          'x-identity-iam-role-write-correlation': correlationId,
+          'x-identity-iam-role-write-route': 'change-role',
+          'x-identity-iam-role-write': 'identity-native',
+          'x-identity-iam-role-write-decision': 'canary_actor_selected',
+          'x-identity-iam-role-write-entry': 'plugin-user-change-role',
+          'x-identity-iam-role-write-actor': actorFingerprint,
+          'x-identity-iam-role-write-selector-kind': 'uid',
+          'x-xrugc-upstream-host': 'identity.d.xrteeth.com',
+        },
+      } as any
+    })
+    const previewSpy = vi.spyOn(apiModule.identityPluginUserApi, 'get').mockImplementation(async (_url, config) => {
+      const headers = config?.headers as Record<string, string>
+      return {
+        data: {
+          code: 0,
+          data: passingIdentityNativeRoleWritePreview(
+            headers['X-Identity-IAM-Role-Write-Correlation'],
+            actorFingerprint,
+          ),
+        },
+      } as any
+    })
+
+    await apiModule.changePluginUserRole(25, 'user')
+    const pending = apiModule.getPendingRoleWriteReplay()
+    expect(pending).toMatchObject({
+      mode: 'identity-native',
+      actorFingerprint,
+      targetId: 25,
+      role: 'user',
+    })
+
+    const replay = await apiModule.replayLastGuardedRoleWrite()
+
+    expect(previewSpy).toHaveBeenCalledTimes(1)
+    expect(postSpy).toHaveBeenCalledTimes(2)
+    const firstConfig = postSpy.mock.calls[0]?.[2] as AxiosRequestConfig
+    const replayConfig = postSpy.mock.calls[1]?.[2] as AxiosRequestConfig
+    expect((replayConfig.headers as Record<string, string>)['Idempotency-Key'])
+      .toBe((firstConfig.headers as Record<string, string>)['Idempotency-Key'])
+    expect((replayConfig.headers as Record<string, string>)['X-Identity-IAM-Role-Write-Require-Dual-Write'])
+      .toBeUndefined()
+    expect(replay.evidence).toMatchObject({
+      mode: 'identity-native',
+      evidenceComplete: true,
+      guarded: false,
+      idempotencyKeyPresent: true,
+      idempotencyReplay: true,
       actorFingerprint,
     })
     expect(apiModule.getPendingRoleWriteReplay()).toBeNull()
