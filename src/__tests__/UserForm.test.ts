@@ -285,6 +285,76 @@ describe('UserForm', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('accepts a legacy direct-user success response only for the edited user', async () => {
+    routeState.params = { id: '42' }
+    apiGet.mockResolvedValue({
+      data: {
+        data: {
+          id: 42,
+          username: 'alice',
+          nickname: 'Alice Liddell',
+          status: 10,
+          roles: ['manager'],
+          organizations: [],
+        },
+      },
+    })
+    updatePluginUser.mockResolvedValueOnce({
+      data: {
+        id: 42,
+        username: 'alice',
+        nickname: 'Alice Updated',
+        roles: ['manager', 'user'],
+      },
+    })
+
+    const wrapper = mountForm()
+    await flushPromises()
+
+    ;(wrapper.vm as any).form.nickname = 'Alice Updated'
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(messageWarning).not.toHaveBeenCalled()
+    expect(messageSuccess).toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/users')
+  })
+
+  it('rejects a legacy direct-user response for a different user without exposing its fields', async () => {
+    routeState.params = { id: '42' }
+    apiGet.mockResolvedValue({
+      data: {
+        data: {
+          id: 42,
+          username: 'alice',
+          nickname: 'Alice Liddell',
+          status: 10,
+          roles: ['manager'],
+          organizations: [],
+        },
+      },
+    })
+    updatePluginUser.mockResolvedValueOnce({
+      data: {
+        id: 41,
+        username: 'manager',
+        nickname: '管理员',
+        roles: ['manager', 'user'],
+      },
+    })
+
+    const wrapper = mountForm()
+    await flushPromises()
+
+    await (wrapper.vm as any).handleSubmit()
+    await flushPromises()
+
+    expect(messageWarning).toHaveBeenCalledWith('user.messages.operationFailed')
+    expect(messageWarning).not.toHaveBeenCalledWith(expect.stringContaining('manager'))
+    expect(messageSuccess).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it('takes the submit lock before validation resolves', async () => {
     let resolveValidation!: (valid: boolean) => void
     validateForm.mockImplementationOnce(() => new Promise<boolean>((resolve) => {
