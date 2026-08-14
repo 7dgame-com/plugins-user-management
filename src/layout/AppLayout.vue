@@ -131,11 +131,15 @@ onMounted(async () => {
 <style scoped>
 .app-layout {
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
   background: var(--bg-page);
 }
 
 .main-area {
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
 }
 
 .sidebar-overlay {
@@ -281,6 +285,10 @@ onMounted(async () => {
 
 .content {
   padding: var(--spacing-lg);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .loading-state {
@@ -294,6 +302,21 @@ onMounted(async () => {
 @media (min-width: 1024px) {
   .content {
     padding: var(--spacing-xl);
+  }
+}
+
+@media (max-width: 640px) {
+  .navbar {
+    padding: 0 var(--spacing-md);
+  }
+
+  .content {
+    padding: var(--spacing-md);
+  }
+
+  .user-info > span,
+  .user-info .el-tag {
+    display: none;
   }
 }
 </style>

@@ -1,7 +1,7 @@
 <template>
-  <div class="invitation-list">
+  <div class="invitation-list responsive-page">
     <!-- 工具栏 -->
-    <div class="toolbar">
+    <div class="toolbar responsive-toolbar">
       <el-button type="primary" @click="showCreateDialog = true">
         <el-icon><Plus /></el-icon>
         {{ t('invitation.generate') }}
@@ -9,7 +9,7 @@
     </div>
 
     <!-- 邀请列表表格 -->
-    <div class="table-card">
+    <div class="table-card responsive-table-surface">
       <el-table :data="invitations" v-loading="loading" stripe>
         <el-table-column prop="code" :label="t('invitation.code')" width="120" />
         <el-table-column :label="t('invitation.quota')" width="100">
@@ -50,7 +50,12 @@
     </div>
 
     <!-- 生成邀请 Dialog -->
-    <el-dialog v-model="showCreateDialog" :title="t('invitation.generate')" width="460px" @closed="resetForm">
+    <el-dialog
+      v-model="showCreateDialog"
+      :title="t('invitation.generate')"
+      width="min(460px, calc(100vw - 32px))"
+      @closed="resetForm"
+    >
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="100px">
         <el-form-item :label="t('invitation.quotaLabel')" prop="quota">
           <el-input-number v-model="form.quota" :min="1" :step="1" style="width: 100%" />
@@ -75,16 +80,22 @@
     </el-dialog>
 
     <!-- 注册记录 Dialog -->
-    <el-dialog v-model="showRecordsDialog" :title="`${t('invitation.registrationRecords')} — ${recordsCode}`" width="560px">
-      <el-table :data="records" v-loading="loadingRecords" stripe>
-        <el-table-column prop="username" :label="t('user.username')" />
-        <el-table-column prop="email" :label="t('user.email')" />
-        <el-table-column :label="t('user.createdAt')" width="180">
-          <template #default="{ row }">
-            {{ formatTime(row.created_at) }}
-          </template>
-        </el-table-column>
-      </el-table>
+    <el-dialog
+      v-model="showRecordsDialog"
+      :title="`${t('invitation.registrationRecords')} — ${recordsCode}`"
+      width="min(560px, calc(100vw - 32px))"
+    >
+      <div class="responsive-table-surface">
+        <el-table :data="records" v-loading="loadingRecords" stripe>
+          <el-table-column prop="username" :label="t('user.username')" />
+          <el-table-column prop="email" :label="t('user.email')" />
+          <el-table-column :label="t('user.createdAt')" width="180">
+            <template #default="{ row }">
+              {{ formatTime(row.created_at) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
       <el-empty v-if="!loadingRecords && records.length === 0" :description="t('invitation.noRecords')" />
     </el-dialog>
   </div>
@@ -232,9 +243,6 @@ onMounted(() => {
 
 <style scoped>
 .toolbar {
-  display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
   margin-bottom: var(--spacing-md);
 }
 
