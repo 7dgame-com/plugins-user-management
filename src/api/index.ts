@@ -829,7 +829,7 @@ function safeResponseCode(error: AxiosError): string | null {
   return typeof code === 'string' || typeof code === 'number' ? String(code).slice(0, 80) : null
 }
 
-function isPassingRoleWritePreview(preview: RoleWriteDecisionPreview): boolean {
+export function isPassingRoleWritePreview(preview: RoleWriteDecisionPreview): boolean {
   return preview.writePerformed === false
     && preview.sourceOfTruth === 'legacy'
     && preview.roleWriteMode === 'dual-write'
