@@ -72,7 +72,7 @@ describe('user-management auth-session routing semantics', () => {
     const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
 
     expect(entrypoint).toContain('generate_lb_config "APP_AUTH" "/api-auth/" "auth"')
-    expect(entrypoint).toContain('APP_AUTH_${i}_URL')
+    expect(entrypoint).toContain('${ENV_PREFIX}_${i}_URL')
     expect(entrypoint).toContain('${API_LOCATIONS}${AUTH_LOCATIONS}')
   })
 
@@ -85,12 +85,15 @@ describe('user-management auth-session routing semantics', () => {
     expect(entrypoint.split('add_header X-Upstream-Addr \\$upstream_addr always;')).toHaveLength(4)
   })
 
-  it('formats debug-env JSON with a conditional upstream comma', () => {
+  it('removes the runtime topology debug file from Production images', () => {
     const entrypoint = readFileSync(resolve(process.cwd(), 'docker-entrypoint.sh'), 'utf8')
+    const nginxTemplate = readFileSync(resolve(process.cwd(), 'nginx.conf.template'), 'utf8')
 
-    expect(entrypoint).toContain('DEBUG_LIST="${API_LIST}"')
-    expect(entrypoint).toContain('DEBUG_LIST="${DEBUG_LIST}\\"APP_AUTH_${i}_URL\\": \\"${url}\\""')
-    expect(entrypoint).toContain('${DEBUG_LIST}${DEBUG_LIST:+, }')
-    expect(entrypoint).not.toContain('  ${API_LIST},')
+    expect(entrypoint).not.toContain('DEBUG_LIST=')
+    expect(entrypoint).toContain('rm -f /usr/share/nginx/html/debug-env.json')
+    expect(nginxTemplate).toMatch(/location = \/debug-env \{[\s\S]*?return 404;/)
+    expect(nginxTemplate).toMatch(/location = \/debug-env\.json \{[\s\S]*?return 404;/)
+    expect(nginxTemplate).toMatch(/location = \/api-diagnostics \{[\s\S]*?return 404;/)
+    expect(nginxTemplate).toMatch(/location = \/api-diagnostics\/ \{[\s\S]*?return 404;/)
   })
 })

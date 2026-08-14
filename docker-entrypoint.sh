@@ -354,32 +354,8 @@ inject_locations "# __API_LOCATIONS__" "${API_LOCATIONS}${AUTH_LOCATIONS}"
 
 echo "[entrypoint] Nginx config generated at $OUTPUT"
 
-# --- 4. 生成调试信息 ---
-API_LIST=""
-i=1
-while true; do
-  eval "url=\${APP_API_${i}_URL}"
-  [ -z "$url" ] && break
-  [ -n "$API_LIST" ] && API_LIST="${API_LIST}, "
-  API_LIST="${API_LIST}\"APP_API_${i}_URL\": \"${url}\""
-  i=$((i + 1))
-done
-DEBUG_LIST="${API_LIST}"
-i=1
-while true; do
-  eval "url=\${APP_AUTH_${i}_URL}"
-  [ -z "$url" ] && break
-  [ -n "$DEBUG_LIST" ] && DEBUG_LIST="${DEBUG_LIST}, "
-  DEBUG_LIST="${DEBUG_LIST}\"APP_AUTH_${i}_URL\": \"${url}\""
-  i=$((i + 1))
-done
-cat > /usr/share/nginx/html/debug-env.json <<EOF
-{
-  ${DEBUG_LIST}${DEBUG_LIST:+, }
-  "buildTime": "$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S')",
-  "hostname": "$(hostname)"
-}
-EOF
+# Production 镜像不保留运行拓扑诊断文件；Nginx 同时对两个公开路径固定 404。
+rm -f /usr/share/nginx/html/debug-env.json
 
-# --- 5. 启动 nginx ---
+# --- 4. 启动 nginx ---
 exec nginx -g 'daemon off;'
