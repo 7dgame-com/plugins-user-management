@@ -1,5 +1,5 @@
 <template>
-  <div class="user-form">
+  <div class="user-form responsive-page">
     <div class="form-card">
       <div class="form-header">
         <h3>{{ isEdit ? t('user.editUser') : t('user.addUser') }}</h3>
@@ -9,7 +9,7 @@
         :model="form"
         :rules="rules"
         label-position="top"
-        style="max-width: 500px; padding: var(--spacing-lg)"
+        class="responsive-form user-editor-form"
         @submit.prevent="handleSubmit"
       >
         <el-form-item :label="t('user.username')" prop="username">
@@ -71,7 +71,7 @@
             {{ organizationsError }}
           </div>
         </el-form-item>
-        <el-form-item>
+        <el-form-item class="form-actions">
           <el-button type="primary" :loading="loading" native-type="submit">
             {{ isEdit ? t('user.saveChanges') : t('user.createUser') }}
           </el-button>
@@ -299,10 +299,28 @@ onMounted(() => {
 
 <style scoped>
 .form-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
+}
+
+.user-editor-form {
+  max-width: 500px;
+  padding: var(--spacing-lg);
+}
+
+.form-actions :deep(.el-form-item__content) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.form-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .form-header {
@@ -324,5 +342,11 @@ onMounted(() => {
 
 .form-hint-error {
   color: var(--danger-color, #f56c6c);
+}
+
+@media (max-width: 640px) {
+  .user-editor-form {
+    padding: var(--spacing-md);
+  }
 }
 </style>

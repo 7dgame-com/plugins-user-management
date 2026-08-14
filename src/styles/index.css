@@ -145,3 +145,60 @@ body {
   color: var(--text-primary);
   background: var(--bg-page);
 }
+
+/* 路由页面的共享窄视口约束，避免表格/表单的固有宽度撑开 iframe。 */
+.responsive-page {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.responsive-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.responsive-toolbar > .el-button + .el-button,
+.responsive-actions > .el-button + .el-button {
+  margin-left: 0;
+}
+
+.responsive-table-surface {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.responsive-table-surface .el-table {
+  width: 100% !important;
+  max-width: 100%;
+}
+
+.responsive-form {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.responsive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+@media (max-width: 640px) {
+  .responsive-toolbar > .el-input,
+  .responsive-toolbar > .el-select {
+    width: 100% !important;
+    flex: 1 1 100%;
+  }
+
+  .responsive-toolbar > .el-button {
+    margin-left: 0;
+  }
+}
