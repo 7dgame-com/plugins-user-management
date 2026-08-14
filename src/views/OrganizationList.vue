@@ -1,6 +1,6 @@
 <template>
-  <div class="organization-list">
-    <div class="page-toolbar">
+  <div class="organization-list responsive-page">
+    <div class="page-toolbar responsive-toolbar">
       <h3 class="page-title">{{ t('organization.title') }}</h3>
       <el-button type="primary" @click="openCreateDialog">
         {{ t('organization.addTitle') }}
@@ -9,7 +9,7 @@
 
     <div v-if="loadError" class="error-banner">{{ loadError }}</div>
 
-    <el-card shadow="never" class="table-card">
+    <el-card shadow="never" class="table-card responsive-table-surface">
       <el-table :data="organizations" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="100" />
         <el-table-column prop="title" :label="t('organization.organizationTitle')" min-width="180" />
@@ -24,7 +24,7 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="min(520px, calc(100vw - 32px))">
       <el-form label-position="top">
         <el-form-item :label="t('organization.organizationTitle')">
           <el-input
@@ -167,6 +167,7 @@ onMounted(() => {
 <style scoped>
 .organization-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-lg);
 }
 

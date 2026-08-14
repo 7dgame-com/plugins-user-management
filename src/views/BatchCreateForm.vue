@@ -1,5 +1,5 @@
 <template>
-  <div class="batch-create">
+  <div class="batch-create responsive-page">
     <!-- 表单阶段 -->
     <div v-if="phase === 'form' || phase === 'submitting'" class="form-card">
       <div class="form-header">
@@ -10,7 +10,7 @@
         :model="form"
         :rules="rules"
         label-position="top"
-        style="max-width: 560px; padding: var(--spacing-lg)"
+        class="responsive-form batch-create-form"
       >
         <el-form-item :label="t('user.batch.usernameTemplate')" prop="usernameTemplate">
           <el-input v-model="form.usernameTemplate" :placeholder="t('user.batch.usernameTemplatePlaceholder')" />
@@ -65,7 +65,7 @@
       </el-form>
 
       <!-- 预览表格 -->
-      <div class="preview-section">
+      <div class="preview-section responsive-table-surface">
         <h4>{{ t('user.batch.preview') }}</h4>
         <el-alert v-if="!usernameHasPlaceholder || !nicknameHasPlaceholder" type="warning" :closable="false" show-icon style="margin-bottom: 12px">
           {{ t('user.batch.previewNoPlaceholderWarning') }}
@@ -80,7 +80,7 @@
         </div>
       </div>
 
-      <div style="padding: 0 var(--spacing-lg) var(--spacing-lg)">
+      <div class="form-actions responsive-actions">
         <el-button type="primary" :loading="phase === 'submitting'" @click="handleSubmit">
           {{ phase === 'submitting' ? t('user.batch.submitting') : t('user.batch.submit') }}
         </el-button>
@@ -458,10 +458,17 @@ onMounted(() => {
 
 <style scoped>
 .form-card {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
+}
+.batch-create-form {
+  max-width: 560px;
+  padding: var(--spacing-lg);
 }
 .form-header {
   padding: var(--spacing-md) var(--spacing-lg);
@@ -482,6 +489,7 @@ onMounted(() => {
   color: var(--danger-color, #f56c6c);
 }
 .preview-section {
+  min-width: 0;
   padding: 0 var(--spacing-lg) var(--spacing-lg);
 }
 .preview-section h4 {
@@ -512,6 +520,23 @@ onMounted(() => {
 .result-actions {
   margin-top: 16px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.form-actions {
+  padding: 0 var(--spacing-lg) var(--spacing-lg);
+}
+
+@media (max-width: 640px) {
+  .batch-create-form {
+    padding: var(--spacing-md);
+  }
+
+  .preview-section,
+  .form-actions,
+  .result-section {
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+  }
 }
 </style>

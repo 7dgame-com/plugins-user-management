@@ -1,12 +1,12 @@
 <template>
-  <div class="user-list">
+  <div class="user-list responsive-page">
     <!-- 搜索栏 -->
-    <div class="toolbar">
+    <div class="toolbar responsive-toolbar">
       <el-input
         v-model="search"
         :placeholder="t('user.searchPlaceholder')"
         clearable
-        style="width: 260px"
+        class="toolbar-search"
         @clear="fetchUsers"
         @keyup.enter="fetchUsers"
       >
@@ -24,7 +24,7 @@
     </div>
 
     <!-- 用户表格 -->
-    <div class="table-card">
+    <div class="table-card responsive-table-surface">
       <el-table :data="users" v-loading="loading" stripe @sort-change="handleSortChange">
         <el-table-column prop="id" label="ID" width="80" sortable="custom" />
         <el-table-column prop="username" :label="t('user.username')" min-width="140" sortable="custom" />
@@ -360,11 +360,13 @@ onMounted(() => {
 
 <style scoped>
 .toolbar {
-  display: flex;
-  gap: var(--spacing-sm);
-  align-items: center;
   margin-bottom: var(--spacing-md);
-  flex-wrap: wrap;
+}
+
+.toolbar-search {
+  width: 260px;
+  max-width: 100%;
+  flex: 0 1 260px;
 }
 
 .table-card {
@@ -380,6 +382,7 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   border-top: 1px solid var(--border-color);
+  overflow-x: auto;
 }
 
 .login-audit-content {
@@ -424,6 +427,14 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
+  .toolbar-search {
+    width: 100%;
+  }
+
+  .pagination {
+    justify-content: flex-start;
+  }
+
   .audit-summary {
     grid-template-columns: 1fr;
   }
