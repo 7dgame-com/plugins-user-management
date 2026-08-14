@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { isInIframe } from '../utils/token'
 import { usePermissions } from '../composables/usePermissions'
@@ -15,21 +15,25 @@ declare module 'vue-router' {
   }
 }
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes: [
+export const shouldRegisterDiagnostics = (isProduction: boolean) => !isProduction
+const developmentRoutes: RouteRecordRaw[] = []
+if (!import.meta.env.PROD) {
+  developmentRoutes.push({
+    path: '/api-diagnostics',
+    name: 'ApiDiagnostics',
+    component: () => import('../views/ApiDiagnostics.vue'),
+    meta: { title: 'API 诊断', public: true }
+  })
+}
+
+export const appRoutes: RouteRecordRaw[] = [
     {
       path: '/register',
       name: 'Register',
       component: () => import('../views/Register.vue'),
       meta: { title: '邀请注册', public: true }
     },
-    {
-      path: '/api-diagnostics',
-      name: 'ApiDiagnostics',
-      component: () => import('../views/ApiDiagnostics.vue'),
-      meta: { title: 'API 诊断', public: true }
-    },
+    ...developmentRoutes,
     {
       path: '/',
       component: () => import('../layout/AppLayout.vue'),
@@ -74,6 +78,10 @@ const router = createRouter({
       ]
     }
   ]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: appRoutes,
 })
 
 export function permissionGuard(

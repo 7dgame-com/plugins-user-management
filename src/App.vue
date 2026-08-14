@@ -2,7 +2,11 @@
   <!-- 公开页面（如注册页）不需要 token -->
   <router-view v-if="isPublicRoute" />
   <template v-else>
-    <router-view v-if="hasToken" />
+    <router-view v-if="canRenderProtectedRoute" />
+
+    <div v-else-if="accessDenied" class="access-denied" role="alert">
+      您没有权限访问此页面
+    </div>
 
     <!-- 握手状态 -->
     <Transition name="handshake-fade">
@@ -17,7 +21,6 @@
             <div class="step done">✅ 发送 PLUGIN_READY</div>
             <div class="step warn">⚠️ 等待 INIT — 无父窗口，永不到达</div>
           </div>
-          <a href="/api-diagnostics" class="diag-link">前往 API 诊断页面 →</a>
         </div>
       </div>
       <!-- iframe 内：简单 loading -->
@@ -38,6 +41,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { isInIframe, getToken, setToken, removeToken, haveSameTokenActor } from './utils/token'
 import { usePluginMessageBridge } from './composables/usePluginMessageBridge'
+import { usePermissions, type Permissions } from './composables/usePermissions'
 import { setThemeFromConfig } from './composables/useTheme'
 import { clearArmedRoleWriteCanary, handleRoleWriteHostMessage } from './api'
 
@@ -49,13 +53,32 @@ const { t } = useI18n()
 const route = useRoute()
 const hasToken = ref(!!getToken())
 const inIframe = ref(isInIframe())
+const { loaded, can, fetchPermissions } = usePermissions()
 
 // 公开路由不需要 token 认证
-const PUBLIC_ROUTES = ['/register', '/api-diagnostics']
-const isPublicRoute = computed(() => PUBLIC_ROUTES.some((p) => route.path.startsWith(p)))
+const isPublicRoute = computed(() => route.meta.public === true)
+const requiredPermission = computed(
+  () => route.meta.requiresPermission as keyof Permissions | undefined,
+)
+const refreshPermissions = (force = false) => {
+  void fetchPermissions(force).catch(() => undefined)
+}
+const canRenderProtectedRoute = computed(() => {
+  if (!hasToken.value || !loaded.value) return false
+  return requiredPermission.value ? can(requiredPermission.value) : true
+})
+const accessDenied = computed(() =>
+  !isPublicRoute.value
+  && hasToken.value
+  && loaded.value
+  && !!requiredPermission.value
+  && !can(requiredPermission.value)
+)
 
 // 显示握手模态窗：非公开页面 且 (不在iframe 或 还没有token)
-const showHandshake = computed(() => !isPublicRoute.value && (!inIframe.value || !hasToken.value))
+const showHandshake = computed(() =>
+  !isPublicRoute.value && (!inIframe.value || !hasToken.value || !loaded.value)
+)
 
 function applyHostToken(newToken: string) {
   if (!haveSameTokenActor(getToken(), newToken)) {
@@ -65,6 +88,7 @@ function applyHostToken(newToken: string) {
   if (newToken) {
     setToken(newToken)
     hasToken.value = true
+    refreshPermissions(true)
   } else {
     removeToken()
     hasToken.value = false
@@ -104,6 +128,7 @@ onMounted(() => {
   } else {
     // iframe 环境：可复用已有 token（避免重载时重新握手）
     hasToken.value = !!getToken()
+    if (hasToken.value) refreshPermissions()
   }
 })
 </script>
@@ -179,13 +204,6 @@ onMounted(() => {
 .step.waiting { color: #909399; }
 .step.warn { color: #e6a23c; }
 
-.diag-link {
-  font-size: 13px;
-  color: #409eff;
-  text-decoration: none;
-}
-.diag-link:hover { text-decoration: underline; }
-
 .handshake-inline {
   position: fixed;
   inset: 0;
@@ -194,6 +212,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background: var(--bg-page, #f5f7fa);
+}
+.access-denied {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: #c45656;
+  font-size: 16px;
 }
 .handshake-spinner { font-size: 36px; display: inline-block; }
 .handshake-spinner.spin { animation: spin 2s linear infinite; }
