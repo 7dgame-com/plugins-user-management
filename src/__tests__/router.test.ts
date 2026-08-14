@@ -8,7 +8,7 @@ vi.mock('../composables/usePermissions', () => ({
 vi.mock('element-plus', () => ({ ElMessage: { error: vi.fn() } }))
 vi.mock('../utils/token', () => ({ isInIframe: vi.fn().mockReturnValue(true) }))
 
-import router, { permissionGuard } from '../router/index'
+import router, { permissionGuard, shouldRegisterDiagnostics } from '../router/index'
 import { isInIframe } from '../utils/token'
 import { requestPendingRoleWriteHostHandoff } from '../utils/hostEvents'
 
@@ -32,6 +32,10 @@ describe('Bug Condition Exploration', () => {
 })
 
 describe('Preservation', () => {
+  it('does not register diagnostics in Production', () => {
+    expect(shouldRegisterDiagnostics(true)).toBe(false)
+  })
+
   it('meta.public routes pass through regardless of permissions', () => {
     mockCan.mockReturnValue(false)
     expect(permissionGuard(to({ public: true }), from())).toBe(true)
