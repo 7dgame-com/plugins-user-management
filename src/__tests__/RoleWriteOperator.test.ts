@@ -77,4 +77,36 @@ describe('RoleWriteOperator', () => {
     expect(apiMocks.armNextRoleWriteCanary).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('角色写入保持 fail-closed')
   })
+
+  it('restores the one-time replay control from a still-valid session replay and consumes it once', async () => {
+    apiMocks.getPendingRoleWriteReplay
+      .mockReturnValueOnce({ correlationId: 'role-write-replay-live' })
+      .mockReturnValue(null)
+    apiMocks.replayLastGuardedRoleWrite.mockResolvedValue({
+      evidence: {
+        evidenceComplete: true,
+        idempotencyReplay: true,
+        idempotencyKeyPresent: true,
+      },
+    })
+    const wrapper = mountOperator()
+    const replayButton = wrapper.findAll('button')
+      .find((button) => button.text().includes('执行一次性幂等重放'))
+
+    expect(replayButton).toBeDefined()
+    await replayButton!.trigger('click')
+    await vi.waitFor(() => expect(apiMocks.replayLastGuardedRoleWrite).toHaveBeenCalled())
+
+    expect(wrapper.text()).toContain('idempotencyReplay')
+    expect(wrapper.text()).toContain('true')
+    expect(wrapper.text()).not.toContain('执行一次性幂等重放')
+  })
+
+  it('does not render a replay control after the session replay has expired', () => {
+    apiMocks.getPendingRoleWriteReplay.mockReturnValue(null)
+
+    const wrapper = mountOperator()
+
+    expect(wrapper.text()).not.toContain('执行一次性幂等重放')
+  })
 })
