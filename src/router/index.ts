@@ -64,6 +64,12 @@ export const appRoutes: RouteRecordRaw[] = [
           meta: { title: '批量创建用户', requiresPermission: 'create-user' }
         },
         {
+          path: 'role-write-operator',
+          name: 'RoleWriteOperator',
+          component: () => import('../views/RoleWriteOperator.vue'),
+          meta: { title: '角色写入受控窗口', requiresPermission: 'change-role' }
+        },
+        {
           path: 'invitations',
           name: 'InvitationList',
           component: () => import('../views/InvitationList.vue'),
