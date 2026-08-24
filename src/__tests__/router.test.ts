@@ -66,6 +66,15 @@ describe('Preservation', () => {
     expect(invitationRoute?.meta.requiresPermission).toBe('manage-invitations')
   })
 
+  it('registers a protected role-write operator independently from diagnostics', () => {
+    const operatorRoute = router.getRoutes().find((route) => route.name === 'RoleWriteOperator')
+
+    expect(operatorRoute?.path).toBe('/role-write-operator')
+    expect(operatorRoute?.meta.public).not.toBe(true)
+    expect(operatorRoute?.meta.requiresPermission).toBe('change-role')
+    expect(shouldRegisterDiagnostics(true)).toBe(false)
+  })
+
   it('sends plugin-url-changed events after route changes', async () => {
     mockCan.mockReturnValue(true)
     const postMessageSpy = vi

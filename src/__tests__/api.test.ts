@@ -984,6 +984,36 @@ describe('Preservation', () => {
     expect(getArmedRoleWriteCanary()).toBeNull()
   })
 
+  it('keeps a guarded replay available across route remounts only until its original five-minute deadline', async () => {
+    const { getPendingRoleWriteReplay } = await import('../api/index')
+    const now = new Date('2026-08-15T10:00:00.000Z')
+    const correlationId = 'phase4-remount-replay-deadline'
+    vi.useFakeTimers()
+
+    try {
+      vi.setSystemTime(now)
+      sessionStorage.setItem('user-mgmt-role-write-replay-v1', JSON.stringify({
+        mode: 'dual-write',
+        correlationId,
+        actorFingerprint: '0123456789abcdef',
+        targetId: 25,
+        role: 'manager',
+        idempotencyKey: `role-write-canary:${correlationId}`,
+        armedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 5 * 60 * 1000).toISOString(),
+      }))
+
+      expect(getPendingRoleWriteReplay()).toMatchObject({ correlationId, role: 'manager' })
+      expect(getPendingRoleWriteReplay()).toMatchObject({ correlationId, role: 'manager' })
+
+      vi.setSystemTime(new Date(now.getTime() + 5 * 60 * 1000))
+      expect(getPendingRoleWriteReplay()).toBeNull()
+      expect(sessionStorage.getItem('user-mgmt-role-write-replay-v1')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('discards an expired role-write canary arm before the next request', async () => {
     const { getArmedRoleWriteCanary } = await import('../api/index')
     sessionStorage.setItem('user-mgmt-role-write-canary-arm-v1', JSON.stringify({
