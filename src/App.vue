@@ -39,7 +39,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { isInIframe, getToken, setToken, removeToken, haveSameTokenActor } from './utils/token'
+import { isInIframe, getToken, setToken, removeAllTokens, haveSameTokenActor } from './utils/token'
 import { usePluginMessageBridge } from './composables/usePluginMessageBridge'
 import { usePermissions, type Permissions } from './composables/usePermissions'
 import { setThemeFromConfig } from './composables/useTheme'
@@ -90,7 +90,7 @@ function applyHostToken(newToken: string) {
     hasToken.value = true
     refreshPermissions(true)
   } else {
-    removeToken()
+    removeAllTokens()
     hasToken.value = false
   }
 }
@@ -105,7 +105,7 @@ const { isReady, onMessage } = usePluginMessageBridge({
   },
   onDestroy: () => {
     clearArmedRoleWriteCanary()
-    removeToken()
+    removeAllTokens()
     hasToken.value = false
   }
 })
@@ -123,7 +123,7 @@ onMounted(() => {
 
   if (!inIframe.value) {
     // 非 iframe 环境：清除所有缓存 token，不允许复用
-    removeToken()
+    removeAllTokens()
     hasToken.value = false
   } else {
     // iframe 环境：可复用已有 token（避免重载时重新握手）

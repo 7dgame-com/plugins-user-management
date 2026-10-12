@@ -68,7 +68,7 @@ describe('Bug Condition Exploration', () => {
     // the key assertion: TOKEN_EXPIRED was NOT sent prematurely (before trying local refresh)
     // we verify by checking requestParentTokenRefresh was called (iframe path attempted)
     expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalled()
-    expect(sent).toBe(1) // sent only after both stages failed — correct behavior
+    expect(sent).toBe(0) // A network failure must preserve the session for retry.
   })
 })
 
@@ -200,7 +200,7 @@ describe('Preservation', () => {
       expect(response.status).toBe(200)
       expect(axiosPostSpy).toHaveBeenCalledWith('/api/v1/auth/refresh', {
         refreshToken: 'old-refresh',
-      })
+      }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) }, timeout: 5000 }))
       expect(localStorage.getItem('user-mgmt-token')).toBe(localNewToken)
       expect(localStorage.getItem('user-mgmt-refresh-token')).toBe('local-new-refresh')
     } finally {
@@ -298,7 +298,7 @@ describe('Preservation', () => {
       expect(tokenModule.requestParentTokenRefresh).toHaveBeenCalledTimes(1)
       expect(axiosPostSpy).toHaveBeenCalledWith('/api/v1/auth/refresh', {
         refreshToken: 'local-refresh-token',
-      })
+      }, expect.objectContaining({ headers: { 'Idempotency-Key': expect.any(String) }, timeout: 5000 }))
       expect(authorizationHeaders).toEqual([
         `Bearer ${oldToken}`,
         `Bearer ${localNewToken}`,

@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+case "${AUTH_PROVIDER:-${VITE_AUTH_PROVIDER:-legacy}}" in
+  identity) AUTH_PROVIDER_VALUE=identity ;;
+  *) AUTH_PROVIDER_VALUE=legacy ;;
+esac
+printf 'window.__ENV__ = { AUTH_PROVIDER: "%s" };\n' "$AUTH_PROVIDER_VALUE" > /usr/share/nginx/html/__env.js
+
 # ============================================================
 # docker-entrypoint.sh
 # 动态生成 Nginx 负载均衡 + failover 配置

@@ -1,5 +1,19 @@
 const TOKEN_KEY = 'user-mgmt-token'
 const REFRESH_TOKEN_KEY = 'user-mgmt-refresh-token'
+const EPOCH_KEY = 'user-mgmt-session-epoch'
+export function getSessionEpoch(): string {
+  return localStorage.getItem(EPOCH_KEY) || 'initial'
+}
+export function beginSession(): void {
+  localStorage.setItem(EPOCH_KEY, crypto.randomUUID())
+}
+export async function withTokenRefreshLock<T>(
+  action: () => Promise<T>
+): Promise<T> {
+  return navigator.locks
+    ? navigator.locks.request('user-mgmt-refresh', action)
+    : action()
+}
 
 /** 是否在 iframe 中运行 */
 export function isInIframe(): boolean {
@@ -15,6 +29,8 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string) {
+  const current = getToken()
+  if (!current || !haveSameTokenActor(current, token)) beginSession()
   localStorage.setItem(TOKEN_KEY, token)
 }
 
@@ -35,11 +51,14 @@ export function removeRefreshToken() {
 }
 
 export function removeAllTokens() {
+  beginSession()
   removeToken()
   removeRefreshToken()
 }
 
-function decodeTokenPayload(token: string | null | undefined): Record<string, unknown> | null {
+function decodeTokenPayload(
+  token: string | null | undefined
+): Record<string, unknown> | null {
   if (!token) return null
 
   const encodedPayload = token.split('.')[1]
@@ -48,26 +67,31 @@ function decodeTokenPayload(token: string | null | undefined): Record<string, un
   try {
     const normalized = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
+    const bytes = Uint8Array.from(atob(padded), (character) =>
+      character.charCodeAt(0)
+    )
     const payload = JSON.parse(new TextDecoder().decode(bytes)) as unknown
     return payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? payload as Record<string, unknown>
+      ? (payload as Record<string, unknown>)
       : null
   } catch {
     return null
   }
 }
 
-export function getTokenActorSubject(token: string | null | undefined): string | null {
+export function getTokenActorSubject(
+  token: string | null | undefined
+): string | null {
   const payload = decodeTokenPayload(token)
   if (!payload) return null
 
   const subject = payload.uid ?? payload.sub
-  const numericSubject = typeof subject === 'number'
-    ? subject
-    : typeof subject === 'string' && /^\d+$/.test(subject.trim())
-      ? Number(subject)
-      : Number.NaN
+  const numericSubject =
+    typeof subject === 'number'
+      ? subject
+      : typeof subject === 'string' && /^\d+$/.test(subject.trim())
+        ? Number(subject)
+        : Number.NaN
 
   return Number.isSafeInteger(numericSubject) && numericSubject > 0
     ? `uid:${numericSubject}`
@@ -82,7 +106,11 @@ export function isFreshAccessToken(
   if (!payload) return false
 
   const expiresAt = Number(payload.exp)
-  if (!Number.isSafeInteger(expiresAt) || expiresAt <= 0 || expiresAt * 1000 <= nowMs) {
+  if (
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= 0 ||
+    expiresAt * 1000 <= nowMs
+  ) {
     return false
   }
 
@@ -107,7 +135,11 @@ export function isUsableRefreshedToken(
   nextToken: string | null | undefined,
   nowMs = Date.now()
 ): boolean {
-  if (!nextToken || nextToken === currentToken || !isFreshAccessToken(nextToken, nowMs)) {
+  if (
+    !nextToken ||
+    nextToken === currentToken ||
+    !isFreshAccessToken(nextToken, nowMs)
+  ) {
     return false
   }
 
@@ -137,7 +169,9 @@ export function haveSameTokenActor(
  * 返回 cleanup 函数，调用方应在组件卸载时（onBeforeUnmount）执行以移除监听器。
  * 注意：PLUGIN_READY 握手由 usePluginMessageBridge 统一负责，此函数不再发送。
  */
-export function listenForParentToken(callback: (token: string) => void): () => void {
+export function listenForParentToken(
+  callback: (token: string) => void
+): () => void {
   function handleMessage(event: MessageEvent) {
     if (event.source !== window.parent) return
 
@@ -148,8 +182,9 @@ export function listenForParentToken(callback: (token: string) => void): () => v
       callback(payload.token)
     }
 
-    if (type === 'TOKEN_UPDATE' && payload?.token) {
-      setToken(payload.token)
+    if (type === 'TOKEN_UPDATE' && typeof payload?.token === 'string') {
+      if (payload.token) setToken(payload.token)
+      else removeAllTokens()
       callback(payload.token)
     }
 
@@ -168,9 +203,7 @@ export function listenForParentToken(callback: (token: string) => void): () => v
 export function requestParentTokenRefresh(): Promise<{
   accessToken: string
 } | null> {
-  const timeout = Number(
-    import.meta.env.VITE_IFRAME_REFRESH_TIMEOUT
-  ) || 3000
+  const timeout = Number(import.meta.env.VITE_IFRAME_REFRESH_TIMEOUT) || 3000
 
   return new Promise((resolve) => {
     let settled = false
@@ -197,7 +230,10 @@ export function requestParentTokenRefresh(): Promise<{
 
     window.addEventListener('message', onMessage)
     window.parent.postMessage(
-      { type: 'TOKEN_REFRESH_REQUEST', id: `token-refresh-request-${Date.now()}` },
+      {
+        type: 'TOKEN_REFRESH_REQUEST',
+        id: `token-refresh-request-${Date.now()}`
+      },
       '*'
     )
   })

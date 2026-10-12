@@ -94,6 +94,11 @@ export default defineConfig({
   server: {
     port: 3003,
     proxy: {
+      '/api-auth': {
+        target: process.env.VITE_AUTH_PROXY_TARGET || 'http://localhost:8086',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/api-auth/, '')
+      },
       '/api': {
         target: 'http://localhost:8081',
         changeOrigin: true,
